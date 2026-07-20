@@ -1,0 +1,152 @@
+.flow-screen__body {
+  flex: 1;
+  overflow: auto;
+  padding: 28px var(--space-8);
+  max-width: var(--content-max);
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* Shared step heading used by Upload/Process/Review */
+.step-heading {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 var(--space-4);
+}
+
+/* Shared file-name / metadata typography used across file rows */
+.file-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-meta {
+  font: 11.5px/1.4 var(--font-mono);
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+/* Shared cloud-queue card (Upload + Process steps) */
+.queue-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.queue-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px var(--space-4);
+  background: var(--color-surface-sunken);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.queue-card__title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.queue-card__body {
+  padding: 14px var(--space-4);
+}
+
+.queue-empty {
+  text-align: center;
+  padding: 18px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* Generic queue/file row */
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 11px 13px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.queue-row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+/* Numbered position chip in a queue row */
+.queue-index {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font: 11px/20px var(--font-mono);
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Small ghost "×" remove control */
+.icon-btn {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px;
+}
+
+/* Text-style link button (back links, retry) */
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--color-brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Primary action button */
+.btn-primary {
+  background: var(--color-brand);
+  color: var(--color-text-on-brand);
+  border: none;
+  border-radius: 7px;
+  padding: 12px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:disabled {
+  background: var(--color-disabled-bg);
+  cursor: default;
+}
+
+/* Footer row: back link on the left, primary action on the right */
+.step-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-5);
+}

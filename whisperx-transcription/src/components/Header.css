@@ -1,0 +1,54 @@
+.app-header {
+  flex: none;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-8);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-header__title {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.app-header__subtitle {
+  font-weight: 400;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.app-header__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.app-header__user {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.app-header__nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.app-header__sep {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.app-header__nav-btn {
+  background: none;
+  border: none;
+  color: var(--color-brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}

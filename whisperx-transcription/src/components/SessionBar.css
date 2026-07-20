@@ -1,0 +1,61 @@
+.session-bar {
+  flex: none;
+  padding: 8px var(--space-8);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.session-bar__status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.session-bar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.session-bar__dot--connected {
+  background: var(--color-dot-connected);
+}
+.session-bar__dot--connecting {
+  background: var(--color-dot-connecting);
+}
+.session-bar__dot--idle {
+  background: var(--color-dot-idle);
+}
+
+.session-bar__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.session-bar__instance {
+  font: 11.5px var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.session-bar__idle {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.session-bar__idle--urgent {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.session-bar__end {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}

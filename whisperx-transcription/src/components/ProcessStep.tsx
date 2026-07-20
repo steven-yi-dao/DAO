@@ -1,4 +1,8 @@
 import type { TranscriptFile } from '../types';
+import { formatBytes } from '../lib/utils';
+import { StatusBadge } from './StatusBadge';
+import { WaveIcon } from './WaveIcon';
+import './ProcessStep.css';
 
 interface ProcessStepProps {
   files: TranscriptFile[];
@@ -8,54 +12,116 @@ interface ProcessStepProps {
 }
 
 export function ProcessStep({ files, onRetryFile, onBackToUpload, onContinueToReview }: ProcessStepProps) {
-  const processFiles = files.filter((f) => f.status === 'queued' || f.status === 'processing');
-  const allTerminal = files.length > 0 && files.every((f) => f.status === 'done' || f.status === 'error');
+  // Every file stays in the shared cloud queue while it uploads or processes.
+  // Once one of the current user's own files finishes, it is lifted out of the
+  // queue and promoted to the "Completed" list above. Other users' (external)
+  // files remain in the queue regardless of their status.
+  const isFinished = (f: TranscriptFile) => !f.external && f.status === 'done';
+  const finishedFiles = files.filter(isFinished);
+  const queueFiles = files.filter((f) => !isFinished(f));
+
+  const ownFiles = files.filter((f) => !f.external);
+  const allTerminal = ownFiles.length > 0 && ownFiles.every((f) => f.status === 'done' || f.status === 'error');
   const continueDisabled = !allTerminal;
 
   return (
     <div>
-      <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1F1F1F', margin: '0 0 16px' }}>Processing</h2>
-      {processFiles.map((file) => (
-        <div key={file.id} style={{ padding: '13px 15px', border: '1px solid #E4E1D8', borderRadius: 9, background: '#fff', marginBottom: 9 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1F1F1F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 420 }}>
-              {file.name}
-            </div>
-            {file.status === 'queued' && <span style={{ fontSize: 12, fontWeight: 600, color: '#6E6B62' }}>Queued</span>}
-            {file.status === 'error' && (
-              <button
-                onClick={() => onRetryFile(file.id)}
-                style={{ background: 'none', border: 'none', color: '#3A5A9F', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', padding: 0 }}
-              >
-                Retry
-              </button>
-            )}
-          </div>
-          {file.status === 'processing' && (
-            <div style={{ width: '100%', height: 7, borderRadius: 4, background: '#E4E1D8', overflow: 'hidden' }}>
-              <div style={{ height: '100%', background: '#3A5A9F', borderRadius: 4, width: `${Math.round(file.progress)}%` }} />
-            </div>
-          )}
-          {file.status === 'error' && <div style={{ fontSize: 12, color: '#B3432E' }}>{file.errorMsg}</div>}
-        </div>
-      ))}
-      {allTerminal && (
-        <div style={{ textAlign: 'center', padding: '22px 10px', color: '#6E6B62', fontSize: 13 }}>
-          All files finished — sent to history. Continue when ready.
-        </div>
+      <h1 className="step-heading">Processing</h1>
+
+      {finishedFiles.length > 0 && (
+        <section className="process__completed">
+          <h2 className="process__completed-heading">Completed · {finishedFiles.length}</h2>
+          <ul className="process__done-list">
+            {finishedFiles.map((file) => (
+              <li key={file.id} className="process__done-row">
+                <div className="process__row-main">
+                  <div className="file-name">{file.name}</div>
+                  <div className="file-meta">
+                    {formatBytes(file.size)}
+                    {file.uploader && ` · ${file.uploader}`}
+                  </div>
+                </div>
+                <StatusBadge status="done" />
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 16 }}>
-        <button
-          onClick={onBackToUpload}
-          style={{ background: 'none', border: 'none', color: '#3A5A9F', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0 }}
-        >
+
+      <div className="queue-card">
+        <div className="queue-card__header">
+          <WaveIcon />
+          <div className="queue-card__title">
+            Cloud queue · {queueFiles.length} {queueFiles.length === 1 ? 'file' : 'files'}
+          </div>
+        </div>
+
+        <div className="queue-card__body">
+          {queueFiles.length > 0 ? (
+            <ul className="process__queue-list">
+              {queueFiles.map((file, i) => {
+                const processing = file.status === 'processing';
+                return (
+                  <li key={file.id} className="process__queue-row">
+                    <div className="process__queue-row-top">
+                      <div className="queue-index" aria-hidden="true">
+                        {i + 1}
+                      </div>
+                      <div className="process__row-main">
+                        <div className="file-name">{file.name}</div>
+                        <div className="file-meta">
+                          {formatBytes(file.size)}
+                          {file.uploader && ` · ${file.uploader}`}
+                        </div>
+                      </div>
+                      {file.status === 'uploading' && <StatusBadge status="uploading" />}
+                      {processing && <StatusBadge status="processing" />}
+                      {file.status === 'done' && <StatusBadge status="done" />}
+                      {file.status === 'queued' && <StatusBadge status="queued" label="In queue" />}
+                      {file.status === 'error' && (
+                        <button type="button" className="process__retry" onClick={() => onRetryFile(file.id)}>
+                          Retry
+                        </button>
+                      )}
+                    </div>
+                    {processing && (
+                      <div
+                        className="progress-bar"
+                        role="progressbar"
+                        aria-label={`Transcribing ${file.name}`}
+                        aria-valuenow={Math.round(file.progress)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                      >
+                        <div className="progress-bar__fill" style={{ width: `${Math.round(file.progress)}%` }} />
+                      </div>
+                    )}
+                    {file.status === 'error' && (
+                      <div className="process__error" role="alert">
+                        {file.errorMsg}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="queue-empty">Queue is empty</div>
+          )}
+        </div>
+      </div>
+
+      <p className="process__finished" role="status" aria-live="polite">
+        {allTerminal && queueFiles.length === 0
+          ? 'All files finished — transcripts saved to history. Continue when ready.'
+          : ''}
+      </p>
+
+      <div className="step-actions">
+        <button type="button" className="link-btn" onClick={onBackToUpload}>
           ← Back to upload
         </button>
-        <button
-          disabled={continueDisabled}
-          onClick={onContinueToReview}
-          style={{ background: continueDisabled ? '#C9C5B8' : '#3A5A9F', color: '#fff', border: 'none', borderRadius: 7, padding: '12px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-        >
+        <button type="button" className="btn-primary" disabled={continueDisabled} onClick={onContinueToReview}>
           Continue to review
         </button>
       </div>

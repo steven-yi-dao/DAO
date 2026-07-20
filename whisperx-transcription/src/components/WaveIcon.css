@@ -1,0 +1,43 @@
+.wave-icon {
+  flex: none;
+  display: block;
+  width: 24px;
+  height: 16px;
+  position: relative;
+}
+
+.wave-icon span {
+  position: absolute;
+  background: var(--color-icon-wave);
+}
+
+.wave-icon__bar {
+  left: 0;
+  bottom: 0;
+  width: 24px;
+  height: 10px;
+  border-radius: 5px;
+}
+
+.wave-icon__dot {
+  border-radius: 50%;
+}
+
+.wave-icon__dot--1 {
+  left: 1px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+}
+.wave-icon__dot--2 {
+  left: 8px;
+  bottom: 6px;
+  width: 12px;
+  height: 12px;
+}
+.wave-icon__dot--3 {
+  left: 16px;
+  bottom: 4px;
+  width: 9px;
+  height: 9px;
+}

@@ -1,9 +1,8 @@
-export type FileStatus = 'uploading' | 'queued' | 'processing' | 'done' | 'error';
+export type FileStatus = 'selected' | 'uploading' | 'queued' | 'processing' | 'done' | 'error';
 
 export interface Word {
   display: string;
-  color: string;
-  weight: string;
+  low: boolean;
 }
 
 export interface Segment {
@@ -23,6 +22,9 @@ export interface TranscriptFile {
   progress: number;
   errorMsg: string | null;
   date?: string;
+  uploader?: string;
+  /** True for jobs owned by another user in the shared cloud queue (e.g. seeded demo files). */
+  external?: boolean;
   segments?: Segment[] | null;
 }
 

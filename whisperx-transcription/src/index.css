@@ -1,48 +1,5 @@
+/* Global stylesheet entry — imported once from main.tsx.
+   Order matters: font + tokens must load before the base layer uses them. */
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-
-html,
-body {
-  margin: 0;
-  height: 100%;
-  background: #eae7de;
-  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
-
-#root {
-  height: 100%;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-::selection {
-  background: #3a5a9f;
-  color: #fff;
-}
-
-button {
-  font-family: inherit;
-}
-
-a {
-  color: #3a5a9f;
-}
-
-a:hover {
-  color: #2f4c87;
-}
+@import './styles/tokens.css';
+@import './styles/base.css';

@@ -14,13 +14,14 @@ import {
   MAX_BYTES,
   IDLE_WARN_MS,
   IDLE_LIMIT_S,
+  IDLE_TOTAL_S,
   buildJson,
   buildSrt,
   buildTxt,
   estimateDuration,
-  formatDuration,
   genSegments,
   seedHistory,
+  seedQueue,
   triggerDownload,
 } from './lib/utils';
 import { Header } from './components/Header';
@@ -30,6 +31,7 @@ import { TranscriptEditor } from './components/TranscriptEditor';
 import { FlowScreen } from './components/FlowScreen';
 import { SessionBar } from './components/SessionBar';
 import { IdleModal } from './components/IdleModal';
+import './App.css';
 
 let idCounter = 0;
 function nextId(prefix: string): string {
@@ -45,6 +47,7 @@ export default function App() {
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [idleWarn, setIdleWarn] = useState(false);
   const [idleSecondsLeft, setIdleSecondsLeft] = useState(0);
+  const [idleSecondsRemaining, setIdleSecondsRemaining] = useState(IDLE_TOTAL_S);
 
   const [nav, setNavState] = useState<NavTab>('new');
   const [step, setStep] = useState<FlowStep>(1);
@@ -57,15 +60,25 @@ export default function App() {
     diarization: false,
   });
 
-  const [files, setFiles] = useState<TranscriptFile[]>([]);
+  const [files, setFiles] = useState<TranscriptFile[]>(() => seedQueue());
   const [history, setHistory] = useState<TranscriptFile[]>(() => seedHistory());
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<FileSource | null>(null);
 
+  // Set once the user hits "Start transcription" — until then their own queued
+  // files wait, while external jobs may take the shared processing slot.
+  const [transcriptionStarted, setTranscriptionStarted] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const seedStartedRef = useRef(false);
   const intervalsRef = useRef<Set<ReturnType<typeof setInterval>>>(new Set());
+  // File ids whose completion (history entry / queue removal) is already handled,
+  // so the effect below stays idempotent across re-renders.
+  const completionHandledRef = useRef<Set<string>>(new Set());
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
+  const filesRef = useRef(files);
+  filesRef.current = files;
 
   useEffect(() => {
     return () => {
@@ -74,11 +87,60 @@ export default function App() {
     };
   }, []);
 
+  // Once the user connects, kick off any external (other users') jobs already in the
+  // shared cloud queue: uploads advance in the background, then join the queue.
+  useEffect(() => {
+    if (session !== 'connected' || seedStartedRef.current) return;
+    seedStartedRef.current = true;
+    files.forEach((f) => {
+      if (f.external && f.status === 'uploading') runSeedJob(f.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // Queue engine: the shared instance works one file at a time, in queue order.
+  // Whenever the processing slot is free, promote the next eligible queued file —
+  // external jobs run on their own; the user's files wait for "Start transcription".
+  useEffect(() => {
+    if (session !== 'connected') return;
+    if (files.some((f) => f.status === 'processing')) return;
+    const next = files.find((f) => f.status === 'queued' && (f.external || transcriptionStarted));
+    if (!next) return;
+    const timer = setTimeout(() => {
+      setFiles((prev) => {
+        if (prev.some((f) => f.status === 'processing')) return prev;
+        return prev.map((f) => (f.id === next.id ? { ...f, status: 'processing' as FileStatus, progress: 1 } : f));
+      });
+      runProgress(next.id);
+    }, 150);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, session, transcriptionStarted]);
+
+  // React to files finishing: log the user's own results to history once, and drop
+  // other users' completed jobs from the shared queue after showing them briefly.
+  useEffect(() => {
+    files.forEach((f) => {
+      const finished = (f.status === 'done' || f.status === 'error') && f.progress >= 100;
+      if (!finished || completionHandledRef.current.has(f.id)) return;
+      completionHandledRef.current.add(f.id);
+      if (f.external) {
+        setTimeout(() => {
+          setFiles((cur) => cur.filter((x) => x.id !== f.id));
+        }, 2500);
+      } else {
+        addHistoryEntry(f);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files]);
+
   // Idle-timeout ticker: warns then ends the session after sitting idle too long.
   useEffect(() => {
     const tick = setInterval(() => {
       if (session !== 'connected') return;
       const elapsed = Date.now() - lastActivity;
+      setIdleSecondsRemaining(Math.max(0, IDLE_TOTAL_S - Math.floor(elapsed / 1000)));
       if (elapsed >= IDLE_WARN_MS) {
         const secondsLeft = IDLE_LIMIT_S - Math.floor((elapsed - IDLE_WARN_MS) / 1000);
         if (secondsLeft <= 0) {
@@ -114,6 +176,7 @@ export default function App() {
         setInstance({ type: 'ml.g4dn.xlarge', region: 'us-east-1', id });
         setLastActivity(Date.now());
         setIdleWarn(false);
+        setIdleSecondsRemaining(IDLE_TOTAL_S);
         setStep(1);
       }
     }, 1300);
@@ -122,6 +185,8 @@ export default function App() {
   function endSession() {
     setSession('disconnected');
     setInstance(null);
+    setTranscriptionStarted(false);
+    completionHandledRef.current.clear();
     setIdleWarn(false);
     setNavState('new');
     setStep(1);
@@ -133,6 +198,7 @@ export default function App() {
   function keepWorking() {
     setLastActivity(Date.now());
     setIdleWarn(false);
+    setIdleSecondsRemaining(IDLE_TOTAL_S);
   }
 
   function toggleSettings() {
@@ -168,6 +234,7 @@ export default function App() {
           status: 'error',
           progress: 0,
           errorMsg: 'Unsupported format — try MP3, WAV, M4A, FLAC, or OGG.',
+          uploader: 'Dawson Ash',
         };
       }
       if (f.size > MAX_BYTES) {
@@ -179,6 +246,7 @@ export default function App() {
           status: 'error',
           progress: 0,
           errorMsg: 'File too large — 500MB max.',
+          uploader: 'Dawson Ash',
         };
       }
       return {
@@ -186,35 +254,63 @@ export default function App() {
         name: f.name,
         size: f.size,
         duration: estimateDuration(f.size),
-        status: 'uploading',
+        status: 'selected',
         progress: 0,
         errorMsg: null,
+        uploader: 'Dawson Ash',
       };
     });
     setFiles((prev) => [...prev, ...additions]);
     touchActivity();
-    additions.forEach((a) => {
-      if (a.status === 'uploading') runUploadProgress(a.id);
-    });
+  }
+
+  // Moves every staged ("selected") file into the shared cloud queue and starts
+  // its upload. From there the queue engine drives it through processing and
+  // completion automatically — no one has to click "start", so a shared instance
+  // never stalls waiting on a single user. Advances to the Process step to watch.
+  function addSelectedToQueue() {
+    const ready = filesRef.current.filter((f) => f.status === 'selected' && !f.external);
+    if (!ready.length) return;
+    setTranscriptionStarted(true);
+    setFiles((prev) =>
+      prev.map((f) => (f.status === 'selected' ? { ...f, status: 'uploading' as FileStatus, progress: 0 } : f)),
+    );
+    ready.forEach((f) => runUploadProgress(f.id));
+    setStep(2);
+    touchActivity();
+  }
+
+  // Advances a file's upload phase. The updater stays pure (the random step is
+  // drawn outside it) and the interval retires itself once the file leaves the
+  // 'uploading' state; queued files are picked up by the queue engine effect.
+  function driveUpload(fileId: string, base: number, jitter: number, tickMs: number) {
+    const interval = setInterval(() => {
+      const current = filesRef.current.find((f) => f.id === fileId);
+      if (!current || current.status !== 'uploading') {
+        clearTrackedInterval(interval);
+        return;
+      }
+      const delta = base + Math.random() * jitter;
+      setFiles((prev) =>
+        prev.map((f) => {
+          if (f.id !== fileId || f.status !== 'uploading') return f;
+          const nextProgress = f.progress + delta;
+          if (nextProgress >= 100) return { ...f, status: 'queued' as FileStatus, progress: 100 };
+          return { ...f, progress: nextProgress };
+        }),
+      );
+    }, tickMs);
+    trackInterval(interval);
   }
 
   function runUploadProgress(fileId: string) {
-    const interval = setInterval(() => {
-      setFiles((prev) => {
-        const file = prev.find((f) => f.id === fileId);
-        if (!file) {
-          clearTrackedInterval(interval);
-          return prev;
-        }
-        const nextProgress = file.progress + 14 + Math.random() * 20;
-        if (nextProgress >= 100) {
-          clearTrackedInterval(interval);
-          return prev.map((f) => (f.id === fileId ? { ...f, status: 'queued' as FileStatus, progress: 100 } : f));
-        }
-        return prev.map((f) => (f.id === fileId ? { ...f, progress: nextProgress } : f));
-      });
-    }, 220);
-    trackInterval(interval);
+    driveUpload(fileId, 14, 20, 660);
+  }
+
+  // Drives an external (another user's) job through its upload phase; once uploaded
+  // it joins the shared cloud queue and waits its turn like everything else.
+  function runSeedJob(fileId: string) {
+    driveUpload(fileId, 6, 9, 900);
   }
 
   function onFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -235,59 +331,46 @@ export default function App() {
     fileInputRef.current?.click();
   }
 
-  function startTranscription() {
-    setStep(2);
-    processQueue();
-  }
-
-  function processQueue() {
-    setFiles((prev) => {
-      if (prev.some((f) => f.status === 'processing')) return prev;
-      const next = prev.find((f) => f.status === 'queued');
-      if (!next) return prev;
-      runProgress(next.id);
-      return prev.map((f) => (f.id === next.id ? { ...f, status: 'processing' as FileStatus, progress: 1 } : f));
-    });
-  }
-
+  // Advances the processing phase. Like driveUpload, the updater is pure and the
+  // interval retires itself once the file finishes; the completion effect takes
+  // care of history entries and clearing external jobs from the shared queue.
   function runProgress(fileId: string) {
     const interval = setInterval(() => {
-      setFiles((prev) => {
-        const file = prev.find((f) => f.id === fileId);
-        if (!file) {
-          clearTrackedInterval(interval);
-          return prev;
-        }
-        const nextProgress = file.progress + 8 + Math.random() * 14;
-        if (nextProgress >= 100) {
-          clearTrackedInterval(interval);
-          const failed = file.name.toLowerCase().includes('fail');
-          const finished: TranscriptFile = failed
+      const current = filesRef.current.find((f) => f.id === fileId);
+      if (!current || current.status !== 'processing') {
+        clearTrackedInterval(interval);
+        return;
+      }
+      const delta = 8 + Math.random() * 14;
+      const diarization = settingsRef.current.diarization;
+      setFiles((prev) =>
+        prev.map((f) => {
+          if (f.id !== fileId || f.status !== 'processing') return f;
+          const nextProgress = f.progress + delta;
+          if (nextProgress < 100) return { ...f, progress: nextProgress };
+          const failed = !f.external && f.name.toLowerCase().includes('fail');
+          return failed
             ? {
-                ...file,
-                status: 'error',
+                ...f,
+                status: 'error' as FileStatus,
                 progress: 100,
                 errorMsg: "We couldn't transcribe this file. It may be corrupted or unreadable.",
               }
             : {
-                ...file,
-                status: 'done',
+                ...f,
+                status: 'done' as FileStatus,
                 progress: 100,
-                segments: genSegments(settingsRef.current.diarization),
+                segments: genSegments(diarization),
               };
-          addHistoryEntry(finished);
-          setTimeout(() => processQueue(), 150);
-          return prev.map((f) => (f.id === fileId ? finished : f));
-        }
-        return prev.map((f) => (f.id === fileId ? { ...f, progress: nextProgress } : f));
-      });
-    }, 350);
+        }),
+      );
+    }, 1050);
     trackInterval(interval);
   }
 
   function addHistoryEntry(file: TranscriptFile) {
     const entry: TranscriptFile = {
-      id: 'h-' + file.id,
+      id: nextId('h'),
       name: file.name,
       size: file.size,
       duration: file.duration,
@@ -301,10 +384,11 @@ export default function App() {
   }
 
   function retryFile(fileId: string) {
+    // A retried file gets a fresh completion (and, if it succeeds, a fresh history entry).
+    completionHandledRef.current.delete(fileId);
     setFiles((prev) =>
       prev.map((f) => (f.id === fileId ? { ...f, status: 'queued' as FileStatus, progress: 0, errorMsg: null } : f)),
     );
-    setTimeout(() => processQueue(), 50);
   }
 
   function removeFile(fileId: string) {
@@ -365,67 +449,62 @@ export default function App() {
   const showConnectGate = !isConnected;
   const showFlowScreen = isConnected && nav === 'new' && !selected;
   const showHistoryScreen = isConnected && nav === 'history' && !selected;
-  const idleTimeoutLabel = formatDuration(Math.round(IDLE_WARN_MS / 1000 + IDLE_LIMIT_S));
 
   return (
-    <div
-      onClick={touchActivity}
-      style={{
-        width: '100%',
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        background: '#F5F4F1',
-        position: 'relative',
-        boxSizing: 'border-box',
-      }}
-    >
+    <div className="app-shell" onClick={touchActivity}>
+      <a className="skip-link" href="#main">
+        Skip to main content
+      </a>
+
       <Header isConnected={isConnected} nav={nav} onToggleHistory={() => setNav(nav === 'history' ? 'new' : 'history')} />
 
-      {showConnectGate && (
-        <ConnectGate connecting={connecting} connectError={connectError} onStart={startSession} />
-      )}
+      <main id="main" className="app-main" tabIndex={-1}>
+        {showConnectGate && (
+          <ConnectGate connecting={connecting} connectError={connectError} onStart={startSession} />
+        )}
 
-      {showHistoryScreen && <HistoryScreen history={history} onView={(id) => selectFile(id, 'history')} />}
+        {showHistoryScreen && <HistoryScreen history={history} onView={(id) => selectFile(id, 'history')} />}
 
-      {selected && (
-        <TranscriptEditor
-          file={selected}
-          source={selectedSource!}
-          playhead={playhead}
-          onBack={backFromEditor}
-          onScrub={scrubTo}
-          onSegmentEdit={(idx, text) => updateSegmentText(selectedSource!, selected.id, idx, text)}
-          onDownload={download}
-        />
-      )}
+        {selected && (
+          <TranscriptEditor
+            file={selected}
+            source={selectedSource!}
+            playhead={playhead}
+            onBack={backFromEditor}
+            onScrub={scrubTo}
+            onSegmentEdit={(idx, text) => updateSegmentText(selectedSource!, selected.id, idx, text)}
+            onDownload={download}
+          />
+        )}
 
-      {showFlowScreen && (
-        <FlowScreen
-          step={step}
-          onStepClick={setStep}
-          files={files}
-          settingsOpen={settingsOpen}
-          settings={settings}
-          fileInputRef={fileInputRef}
-          onToggleSettings={toggleSettings}
-          onUpdateSetting={updateSetting}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          onOpenPicker={openPicker}
-          onFileInputChange={onFileInputChange}
-          onRemoveFile={removeFile}
-          onStartTranscription={startTranscription}
-          onRetryFile={retryFile}
-          onBackToUpload={() => setStep(1)}
-          onContinueToReview={() => setStep(3)}
-          onBackToProcess={() => setStep(2)}
-          onViewFile={(id) => selectFile(id, 'queue')}
-        />
-      )}
+        {showFlowScreen && (
+          <FlowScreen
+            step={step}
+            onStepClick={setStep}
+            files={files}
+            settingsOpen={settingsOpen}
+            settings={settings}
+            fileInputRef={fileInputRef}
+            onToggleSettings={toggleSettings}
+            onUpdateSetting={updateSetting}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            onOpenPicker={openPicker}
+            onFileInputChange={onFileInputChange}
+            onRemoveFile={removeFile}
+            onAddToQueue={addSelectedToQueue}
+            onBackToTools={endSession}
+            onRetryFile={retryFile}
+            onBackToUpload={() => setStep(1)}
+            onContinueToReview={() => setStep(3)}
+            onBackToProcess={() => setStep(2)}
+            onViewFile={(id) => selectFile(id, 'queue')}
+          />
+        )}
+      </main>
 
       {isConnected && (
-        <SessionBar session={session} instance={instance} idleTimeoutLabel={idleTimeoutLabel} onEndSession={endSession} />
+        <SessionBar session={session} instance={instance} idleSecondsRemaining={idleSecondsRemaining} onEndSession={endSession} />
       )}
 
       {idleWarn && <IdleModal idleSecondsLeft={idleSecondsLeft} onEndNow={endSession} onKeepWorking={keepWorking} />}

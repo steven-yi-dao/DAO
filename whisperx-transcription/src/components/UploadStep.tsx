@@ -1,7 +1,12 @@
+import { useState } from 'react';
 import type { RefObject } from 'react';
 import type { TranscriptFile, TranscriptionSettings } from '../types';
 import { formatBytes } from '../lib/utils';
 import { LANGUAGE_LABELS, MODEL_LABELS } from '../lib/statusMeta';
+import { StatusBadge } from './StatusBadge';
+import { WaveIcon } from './WaveIcon';
+import { ModalDialog } from './ModalDialog';
+import './UploadStep.css';
 
 interface UploadStepProps {
   files: TranscriptFile[];
@@ -15,7 +20,8 @@ interface UploadStepProps {
   onOpenPicker: () => void;
   onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemoveFile: (id: string) => void;
-  onStartTranscription: () => void;
+  onAddToQueue: () => void;
+  onBackToTools: () => void;
 }
 
 export function UploadStep({
@@ -30,53 +36,69 @@ export function UploadStep({
   onOpenPicker,
   onFileInputChange,
   onRemoveFile,
-  onStartTranscription,
+  onAddToQueue,
+  onBackToTools,
 }: UploadStepProps) {
-  const hasFiles = files.length > 0;
-  const hasQueued = files.some((f) => f.status === 'queued');
-  const anyUploading = files.some((f) => f.status === 'uploading');
-  const isProcessing = files.some((f) => f.status === 'processing');
-  const startDisabled = !hasQueued || isProcessing || anyUploading;
-  const queuedCount = files.filter((f) => f.status === 'queued').length;
+  const [confirmBack, setConfirmBack] = useState(false);
+  // Picked files are staged here first; they only join the shared cloud queue
+  // once "Add files to cloud queue" is pressed. Validation failures (error at
+  // progress 0) never made it in, so they stay in the staging list too.
+  const isStaged = (f: TranscriptFile) => !f.external && (f.status === 'selected' || (f.status === 'error' && f.progress === 0));
+  const stagedFiles = files.filter(isStaged);
+  const queueFiles = files.filter((f) => !isStaged(f));
+  const readyCount = files.filter((f) => f.status === 'selected' && !f.external).length;
+  const addDisabled = readyCount === 0;
 
   return (
     <div>
-      <h2 style={{ fontSize: 17, fontWeight: 700, color: '#1F1F1F', margin: '0 0 16px' }}>Upload audio</h2>
+      <h1 className="step-heading">Upload audio</h1>
+
       <div
+        role="button"
+        tabIndex={0}
+        aria-label="Upload audio files — drag and drop, or activate to browse"
+        className="upload-dropzone"
         onDragOver={onDragOver}
         onDrop={onDrop}
         onClick={onOpenPicker}
-        style={{ border: '2px dashed #C9C5B8', borderRadius: 11, padding: 36, textAlign: 'center', cursor: 'pointer', background: '#FBFAF7' }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onOpenPicker();
+          }
+        }}
       >
-        <div style={{ fontSize: 14.5, fontWeight: 600, color: '#1F1F1F', marginBottom: 5 }}>Drop audio files here</div>
-        <div style={{ fontSize: 13, color: '#6E6B62' }}>
-          or click to browse · MP3, WAV, M4A, FLAC, OGG · up to 500MB each
-        </div>
+        <div className="upload-dropzone__title">Drag and drop audio files here</div>
+        <div className="upload-dropzone__hint">or click to browse · MP3, MP4, WAV, M4A, FLAC, OGG</div>
         <input
           ref={fileInputRef}
           type="file"
           accept="audio/*"
           multiple
-          style={{ display: 'none' }}
+          aria-label="Choose audio files"
+          hidden
           onChange={onFileInputChange}
         />
       </div>
 
-      <div style={{ marginTop: 18 }}>
+      <div className="upload-settings">
         <button
+          type="button"
+          className="upload-settings__toggle"
           onClick={onToggleSettings}
-          style={{ background: 'none', border: 'none', padding: 0, fontSize: 13, fontWeight: 600, color: '#3A5A9F', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+          aria-expanded={settingsOpen}
+          aria-controls="upload-settings-panel"
         >
-          Transcription settings {settingsOpen ? '▴' : '▾'}
+          Transcription settings <span aria-hidden="true">{settingsOpen ? '▴' : '▾'}</span>
         </button>
         {settingsOpen && (
-          <div style={{ display: 'flex', gap: 26, marginTop: 13, padding: 18, background: '#FBFAF7', border: '1px solid #E4E1D8', borderRadius: 9, flexWrap: 'wrap' }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, fontWeight: 600, color: '#6E6B62' }}>
+          <div id="upload-settings-panel" className="settings-panel">
+            <label className="settings-field">
               Language
               <select
+                className="settings-select"
                 value={settings.language}
                 onChange={(e) => onUpdateSetting('language', e.target.value)}
-                style={{ fontSize: 13.5, padding: '8px 9px', borderRadius: 6, border: '1px solid #D5D1C6', background: '#fff', color: '#1F1F1F' }}
               >
                 {Object.entries(LANGUAGE_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
@@ -85,12 +107,12 @@ export function UploadStep({
                 ))}
               </select>
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, fontWeight: 600, color: '#6E6B62' }}>
+            <label className="settings-field">
               Model
               <select
+                className="settings-select"
                 value={settings.model}
                 onChange={(e) => onUpdateSetting('model', e.target.value)}
-                style={{ fontSize: 13.5, padding: '8px 9px', borderRadius: 6, border: '1px solid #D5D1C6', background: '#fff', color: '#1F1F1F' }}
               >
                 {Object.entries(MODEL_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
@@ -99,137 +121,151 @@ export function UploadStep({
                 ))}
               </select>
             </label>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, fontWeight: 600, color: '#6E6B62' }}>
-              Label speakers (beta)
+            <div className="settings-field">
+              <span id="diarization-label">Label speakers (beta)</span>
               <button
+                type="button"
+                className="switch"
+                role="switch"
+                aria-checked={settings.diarization}
+                aria-labelledby="diarization-label"
                 onClick={() => onUpdateSetting('diarization', !settings.diarization)}
-                style={{
-                  position: 'relative',
-                  width: 40,
-                  height: 22,
-                  borderRadius: 11,
-                  border: 'none',
-                  background: settings.diarization ? '#3A5A9F' : '#D9D5C9',
-                  cursor: 'pointer',
-                  padding: 0,
-                }}
               >
-                <span
-                  style={{
-                    position: 'absolute',
-                    top: 2,
-                    left: settings.diarization ? 20 : 2,
-                    width: 18,
-                    height: 18,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    boxShadow: '0 1px 2px rgba(0,0,0,.3)',
-                    transition: 'left .15s ease',
-                  }}
-                />
+                <span className="switch__thumb" />
               </button>
-            </label>
+            </div>
           </div>
         )}
       </div>
 
-      <div style={{ marginTop: 26, border: '1px solid #E4E1D8', borderRadius: 11, background: '#fff', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', background: '#F0EEE7', borderBottom: '1px solid #E4E1D8' }}>
-          <div style={{ flex: 'none', width: 24, height: 16, position: 'relative' }}>
-            <span style={{ position: 'absolute', left: 0, bottom: 0, width: 24, height: 10, background: '#6E8AB8', borderRadius: 5 }} />
-            <span style={{ position: 'absolute', left: 1, bottom: 4, width: 10, height: 10, background: '#6E8AB8', borderRadius: '50%' }} />
-            <span style={{ position: 'absolute', left: 8, bottom: 6, width: 12, height: 12, background: '#6E8AB8', borderRadius: '50%' }} />
-            <span style={{ position: 'absolute', left: 16, bottom: 4, width: 9, height: 9, background: '#6E8AB8', borderRadius: '50%' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1F1F1F' }}>
-              Cloud queue · {files.length} {files.length === 1 ? 'file' : 'files'}
-            </div>
-            <div style={{ fontSize: 11.5, color: '#6E6B62', marginTop: 1 }}>
-              Uploaded to your SageMaker instance — not stored on this device
-            </div>
-          </div>
-        </div>
-
-        <div style={{ padding: '14px 16px' }}>
-          {hasFiles &&
-            files.map((file, i) => (
-              <div
-                key={file.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 13px', border: '1px solid #E4E1D8', borderRadius: 8, background: '#FBFAF7', marginBottom: 9 }}
-              >
-                <div
-                  style={{
-                    flex: 'none',
-                    width: 20,
-                    height: 20,
-                    borderRadius: 5,
-                    background: '#F0EEE7',
-                    color: '#8A8678',
-                    font: "11px/20px 'IBM Plex Mono', monospace",
-                    fontWeight: 600,
-                    textAlign: 'center',
-                  }}
-                >
-                  {i + 1}
+      {stagedFiles.length > 0 && (
+        <section className="upload-section">
+          <h2 className="upload-section__heading">Selected files</h2>
+          <ul className="queue-list">
+            {stagedFiles.map((file) => (
+              <li key={file.id} className="queue-row">
+                <div className="queue-row__main">
+                  <div className="file-name">{file.name}</div>
+                  <div className="file-meta">{formatBytes(file.size)}</div>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1F1F1F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {file.name}
-                  </div>
-                  {file.status === 'uploading' && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 5 }}>
-                      <div style={{ flex: 1, maxWidth: 160, height: 5, borderRadius: 3, background: '#E4E1D8', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', background: '#B8862E', borderRadius: 3, width: `${Math.round(file.progress)}%` }} />
-                      </div>
-                      <div style={{ font: "11px 'IBM Plex Mono', monospace", color: '#8A6A1E' }}>
-                        Uploading… {Math.round(file.progress)}%
-                      </div>
-                    </div>
-                  )}
-                  <div style={{ font: "11.5px/1.4 'IBM Plex Mono', monospace", color: '#8A8678', marginTop: 2 }}>
-                    {formatBytes(file.size)}
-                  </div>
-                </div>
-                {file.status === 'error' && (
-                  <div style={{ fontSize: 11.5, color: '#B3432E', textAlign: 'right', maxWidth: 220 }}>{file.errorMsg}</div>
+                {file.status === 'error' ? (
+                  <div className="upload__error-text">{file.errorMsg}</div>
+                ) : (
+                  <StatusBadge status="selected" />
                 )}
                 <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Remove ${file.name}`}
                   onClick={() => onRemoveFile(file.id)}
-                  title="Remove"
-                  style={{ flex: 'none', background: 'none', border: 'none', color: '#9C9890', fontSize: 16, lineHeight: 1, cursor: 'pointer', padding: 4 }}
                 >
                   ×
                 </button>
-              </div>
+              </li>
             ))}
-          {hasFiles && (
-            <button
-              onClick={onOpenPicker}
-              style={{ background: 'none', border: '1px dashed #C9C5B8', color: '#3A5A9F', fontSize: 12.5, fontWeight: 600, padding: '9px 14px', borderRadius: 7, cursor: 'pointer', width: '100%', boxSizing: 'border-box' }}
-            >
-              + Add more files
-            </button>
-          )}
-          {!hasFiles && (
-            <div style={{ textAlign: 'center', padding: '18px 10px' }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: '#6E6B62', marginBottom: 3 }}>Queue is empty</div>
-              <div style={{ fontSize: 12, color: '#8A8678' }}>
-                Drop files above or click to browse — add as many as you like, they'll upload to the cloud instance
-                and queue here.
-              </div>
-            </div>
+          </ul>
+        </section>
+      )}
+
+      <div className="queue-card upload-section">
+        <div className="queue-card__header">
+          <WaveIcon />
+          <div className="queue-card__title">
+            Cloud queue · {queueFiles.length} {queueFiles.length === 1 ? 'file' : 'files'}
+          </div>
+        </div>
+
+        <div className="queue-card__body">
+          {queueFiles.length > 0 ? (
+            <ul className="queue-list">
+              {queueFiles.map((file, i) => (
+                <li key={file.id} className="queue-row">
+                  <div className="queue-index" aria-hidden="true">
+                    {i + 1}
+                  </div>
+                  <div className="queue-row__main">
+                    <div className="file-name">{file.name}</div>
+                    {file.status === 'uploading' && (
+                      <div className="upload__row-badge">
+                        <StatusBadge status="uploading" />
+                      </div>
+                    )}
+                    {file.status === 'processing' && (
+                      <div className="upload__row-badge">
+                        <StatusBadge status="processing" />
+                      </div>
+                    )}
+                    {file.status === 'done' && (
+                      <div className="upload__row-badge">
+                        <StatusBadge status="done" />
+                      </div>
+                    )}
+                    <div className="file-meta">
+                      {formatBytes(file.size)}
+                      {file.uploader && ` · ${file.uploader}`}
+                    </div>
+                  </div>
+                  {file.status === 'error' && <div className="upload__error-text">{file.errorMsg}</div>}
+                  {!file.external && (
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label={`Remove ${file.name}`}
+                      onClick={() => onRemoveFile(file.id)}
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="queue-empty">Queue is empty</div>
           )}
         </div>
       </div>
 
-      <button
-        disabled={startDisabled}
-        onClick={onStartTranscription}
-        style={{ marginTop: 20, background: startDisabled ? '#C9C5B8' : '#3A5A9F', color: '#fff', border: 'none', borderRadius: 7, padding: '12px 22px', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
-      >
-        Start transcription ({queuedCount})
-      </button>
+      <div className="step-actions">
+        <button type="button" className="link-btn" onClick={() => setConfirmBack(true)}>
+          ← Back to Tools
+        </button>
+        <button type="button" className="btn-primary" disabled={addDisabled} onClick={onAddToQueue}>
+          Add files to cloud queue{readyCount > 0 ? ` (${readyCount})` : ''}
+        </button>
+      </div>
+
+      {confirmBack && (
+        <ModalDialog
+          title="Leave transcription?"
+          onDismiss={() => setConfirmBack(false)}
+          actions={
+            <>
+              <button
+                type="button"
+                className="modal-btn modal-btn--secondary"
+                onClick={() => setConfirmBack(false)}
+              >
+                Stay here
+              </button>
+              <button
+                type="button"
+                className="modal-btn modal-btn--danger"
+                onClick={() => {
+                  setConfirmBack(false);
+                  onBackToTools();
+                }}
+              >
+                Back to Tools
+              </button>
+            </>
+          }
+        >
+          <p className="modal__text">
+            Going back to Tools ends this cloud session and clears the current queue. Finished transcripts stay in your
+            history.
+          </p>
+        </ModalDialog>
+      )}
     </div>
   );
 }

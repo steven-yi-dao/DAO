@@ -4,6 +4,7 @@ import { StepIndicator } from './StepIndicator';
 import { UploadStep } from './UploadStep';
 import { ProcessStep } from './ProcessStep';
 import { ReviewStep } from './ReviewStep';
+import './FlowScreen.css';
 
 interface FlowScreenProps {
   step: FlowStep;
@@ -19,7 +20,8 @@ interface FlowScreenProps {
   onOpenPicker: () => void;
   onFileInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onRemoveFile: (id: string) => void;
-  onStartTranscription: () => void;
+  onAddToQueue: () => void;
+  onBackToTools: () => void;
   onRetryFile: (id: string) => void;
   onBackToUpload: () => void;
   onContinueToReview: () => void;
@@ -41,7 +43,8 @@ export function FlowScreen({
   onOpenPicker,
   onFileInputChange,
   onRemoveFile,
-  onStartTranscription,
+  onAddToQueue,
+  onBackToTools,
   onRetryFile,
   onBackToUpload,
   onContinueToReview,
@@ -51,7 +54,7 @@ export function FlowScreen({
   return (
     <>
       <StepIndicator step={step} onStepClick={onStepClick} />
-      <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px', maxWidth: 720, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+      <div className="flow-screen__body">
         {step === 1 && (
           <UploadStep
             files={files}
@@ -65,7 +68,8 @@ export function FlowScreen({
             onOpenPicker={onOpenPicker}
             onFileInputChange={onFileInputChange}
             onRemoveFile={onRemoveFile}
-            onStartTranscription={onStartTranscription}
+            onAddToQueue={onAddToQueue}
+            onBackToTools={onBackToTools}
           />
         )}
         {step === 2 && (

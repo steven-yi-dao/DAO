@@ -1,0 +1,66 @@
+.modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 18, 14, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+  animation: fadeIn 0.2s ease;
+}
+
+.modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: 28px;
+  width: 320px;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+  box-shadow: var(--shadow-modal);
+}
+
+.modal__title {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0 0 7px;
+}
+
+.modal__text {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.modal__actions {
+  display: flex;
+  gap: 9px;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.modal-btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 15px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: none;
+}
+
+.modal-btn--secondary {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text);
+}
+
+.modal-btn--primary {
+  background: var(--color-brand);
+  color: var(--color-text-on-brand);
+}
+
+.modal-btn--danger {
+  background: var(--color-danger);
+  color: var(--color-text-on-brand);
+}

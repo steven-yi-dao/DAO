@@ -1,4 +1,5 @@
 import type { NavTab } from '../types';
+import './Header.css';
 
 interface HeaderProps {
   isConnected: boolean;
@@ -8,35 +9,24 @@ interface HeaderProps {
 
 export function Header({ isConnected, nav, onToggleHistory }: HeaderProps) {
   return (
-    <div
-      style={{
-        flex: 'none',
-        height: 60,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 32px',
-        borderBottom: '1px solid #E4E1D8',
-      }}
-    >
-      <div style={{ fontSize: 15.5, fontWeight: 700, color: '#1F1F1F' }}>
-        Transcribe <span style={{ fontWeight: 400, color: '#8A8678', fontSize: 13 }}>· Accessibility Office</span>
+    <header className="app-header">
+      <div className="app-header__title">
+        Digital Accessibility Office
+        {isConnected && <span className="app-header__subtitle"> · Transcribe</span>}
       </div>
-      {isConnected && (
-        <button
-          onClick={onToggleHistory}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#3A5A9F',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          {nav === 'history' ? 'New transcript' : 'History'}
-        </button>
-      )}
-    </div>
+      <div className="app-header__account">
+        <span className="app-header__user">Dawson Ash</span>
+        {isConnected && (
+          <nav className="app-header__nav" aria-label="Views">
+            <span className="app-header__sep" aria-hidden="true">
+              ·
+            </span>
+            <button type="button" className="app-header__nav-btn" onClick={onToggleHistory}>
+              {nav === 'history' ? 'New transcript' : 'History'}
+            </button>
+          </nav>
+        )}
+      </div>
+    </header>
   );
 }

@@ -1,0 +1,48 @@
+.review__list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.review__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 13px var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: var(--color-surface);
+}
+
+.review__row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.review__view {
+  background: var(--color-brand);
+  border: none;
+  color: var(--color-text-on-brand);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 15px;
+  border-radius: var(--radius-md);
+}
+
+.review__failed {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-danger);
+}
+
+.review__back {
+  margin-top: var(--space-4);
+  background: none;
+  border: none;
+  color: var(--color-brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}

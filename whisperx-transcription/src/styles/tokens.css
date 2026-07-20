@@ -1,0 +1,106 @@
+/* Design tokens — single source of truth for color, type, spacing, and motion.
+   Light "greige" theme only. Muted text values meet WCAG AA on app surfaces. */
+:root {
+  /* Brand */
+  --color-brand: #3a5a9f;
+  --color-brand-hover: #2f4c87;
+  --color-brand-soft: #e8edf6;
+
+  /* Text */
+  --color-text: #1f1f1f;
+  --color-text-body: #232323;
+  --color-text-muted: #63615a;
+  --color-text-on-brand: #ffffff;
+
+  /* Surfaces */
+  --color-bg: #f5f4f1; /* app background */
+  --color-body-bg: #eae7de; /* html/body behind the app */
+  --color-surface: #ffffff;
+  --color-surface-raised: #fbfaf7; /* cards, dropzone */
+  --color-surface-sunken: #f0eee7; /* queue headers */
+  --color-surface-subtle: #f3f1eb; /* hover fills */
+
+  /* Borders */
+  --color-border: #e4e1d8;
+  --color-border-strong: #d5d1c6;
+  --color-border-dashed: #c9c5b8;
+
+  /* Disabled */
+  --color-disabled-bg: #c9c5b8;
+
+  /* Status — one source of truth (mirrored by statusMeta.ts className map) */
+  --color-status-uploading-fg: #7a5d14;
+  --color-status-uploading-bg: #f5ebd6;
+  --color-status-queued-fg: #63615a;
+  --color-status-queued-bg: #edeae2;
+  --color-status-processing-fg: #3a5a9f;
+  --color-status-processing-bg: #e8edf6;
+  --color-status-done-fg: #2e6b45;
+  --color-status-done-bg: #e4f0e8;
+  --color-status-error-fg: #a53a26;
+  --color-status-error-bg: #f7e4de;
+  --color-status-error-border: #e9c4b8;
+
+  /* Semantic text colors reused outside badges */
+  --color-danger: #a53a26;
+  --color-danger-strong: #8a4636;
+  --color-success: #2e6b45;
+  --color-success-surface: #f2f8f3;
+  --color-success-border: #cfe3d3;
+  --color-warning: #7a5d14;
+
+  /* Decorative queue waveform icon */
+  --color-icon-wave: #6e8ab8;
+
+  /* Toggle switch (off track) */
+  --color-switch-off: #d9d5c9;
+
+  /* Session status dots */
+  --color-dot-connected: #2f6b48;
+  --color-dot-connecting: #8a6a1e;
+  --color-dot-idle: #63615a;
+
+  /* Video-preview mock (decorative dark surface) */
+  --color-video-bg: #1b1e24;
+  --color-video-bg-alt: #20232a;
+  --color-video-stripe: #262a32;
+  --color-video-accent: #7c9cd9;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radii */
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 11px;
+  --radius-xl: 13px;
+  --radius-pill: 999px;
+
+  /* Spacing scale (4px base) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Layout */
+  --content-max: 720px;
+
+  /* Focus ring — used by the universal :focus-visible rule in base.css */
+  --focus-ring-color: var(--color-brand);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --focus-ring-offset: 3px;
+
+  /* Elevation */
+  --shadow-modal: 0 10px 30px rgba(0, 0, 0, 0.25);
+
+  /* Z-index */
+  --z-modal: 20;
+
+  /* Motion — neutralized under prefers-reduced-motion (see base.css) */
+  --transition-fast: 0.15s ease;
+  --transition-color: color 0.15s ease;
+}

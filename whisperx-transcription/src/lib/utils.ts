@@ -4,6 +4,7 @@ export const ALLOWED_EXTENSIONS = ['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'a
 export const MAX_BYTES = 500 * 1024 * 1024;
 export const IDLE_WARN_MS = 14 * 60 * 1000;
 export const IDLE_LIMIT_S = 60;
+export const IDLE_TOTAL_S = IDLE_WARN_MS / 1000 + IDLE_LIMIT_S; // 900
 
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
@@ -164,8 +165,7 @@ function genWords(text: string, lowList: string[]): Word[] {
     const isLow = lowSet.has(clean);
     return {
       display: tok + (i < tokens.length - 1 ? ' ' : ''),
-      color: isLow ? '#B3432E' : '#232323',
-      weight: isLow ? '700' : '400',
+      low: isLow,
     };
   });
 }
@@ -182,6 +182,23 @@ export function genSegments(diarization: boolean): Segment[] {
       words: genWords(line.text, line.low),
     };
   });
+}
+
+export function seedQueue(): TranscriptFile[] {
+  return [
+    {
+      id: 'q1',
+      name: 'Hello-world.wav',
+      size: 2202010, // 2.1 MB
+      duration: estimateDuration(2202010),
+      status: 'uploading',
+      progress: 0,
+      errorMsg: null,
+      uploader: 'Steven Yi',
+      external: true,
+      segments: null,
+    },
+  ];
 }
 
 export function seedHistory(): TranscriptFile[] {

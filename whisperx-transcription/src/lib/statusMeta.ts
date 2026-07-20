@@ -2,16 +2,17 @@ import type { FileStatus } from '../types';
 
 export interface StatusMeta {
   label: string;
-  color: string;
-  bg: string;
+  /** BEM modifier applied alongside `.status-badge`; colors live in StatusBadge.css. */
+  className: string;
 }
 
 const STATUS_META: Record<FileStatus, StatusMeta> = {
-  uploading: { label: 'Uploading', color: '#8A6A1E', bg: '#F7EDDD' },
-  queued: { label: 'Queued', color: '#6E6B62', bg: '#EDEAE2' },
-  processing: { label: 'Processing', color: '#8A6A1E', bg: '#F7EDDD' },
-  done: { label: 'Done', color: '#2E6B45', bg: '#E4F0E8' },
-  error: { label: 'Error', color: '#B3432E', bg: '#F7E4DE' },
+  selected: { label: 'Ready', className: 'status-badge--queued' },
+  uploading: { label: 'Uploading', className: 'status-badge--uploading' },
+  queued: { label: 'Queued', className: 'status-badge--queued' },
+  processing: { label: 'Processing', className: 'status-badge--processing' },
+  done: { label: 'Done', className: 'status-badge--done' },
+  error: { label: 'Error', className: 'status-badge--error' },
 };
 
 export function getStatusMeta(status: FileStatus): StatusMeta {

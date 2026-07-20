@@ -1,0 +1,6 @@
+.idle-modal__countdown {
+  font: 25px/1 var(--font-mono);
+  font-weight: 600;
+  color: var(--color-danger);
+  margin: 15px 0;
+}
