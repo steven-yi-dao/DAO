@@ -173,7 +173,7 @@ export default function App() {
         setAttempts(attemptNumber);
         setSession('connected');
         setConnectError(null);
-        setInstance({ type: 'ml.g4dn.xlarge', region: 'us-east-1', id });
+        setInstance({ type: 'ml.g4dn.xlarge', region: 'us-east-2', id });
         setLastActivity(Date.now());
         setIdleWarn(false);
         setIdleSecondsRemaining(IDLE_TOTAL_S);

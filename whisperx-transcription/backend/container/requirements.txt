@@ -1,0 +1,8 @@
+# whisperx / faster-whisper / ctranslate2 are tightly coupled and are the most
+# common source of breakage — do not bump one without re-testing the set on the
+# exact base image (BACKEND_PLAN.md §9).
+whisperx==3.1.5
+faster-whisper==1.0.3
+ctranslate2==4.4.0
+pyannote.audio==3.1.1
+boto3>=1.34

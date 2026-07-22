@@ -1,18 +1,22 @@
+import type { RefObject } from 'react';
 import type { TranscriptFile } from '../types';
 import { formatDuration } from '../lib/utils';
 import './ReviewStep.css';
 
 interface ReviewStepProps {
+  headingRef: RefObject<HTMLHeadingElement | null>;
   files: TranscriptFile[];
   onViewFile: (id: string) => void;
   onBackToProcess: () => void;
 }
 
-export function ReviewStep({ files, onViewFile, onBackToProcess }: ReviewStepProps) {
+export function ReviewStep({ headingRef, files, onViewFile, onBackToProcess }: ReviewStepProps) {
   const own = files.filter((f) => !f.external);
   return (
     <div>
-      <h1 className="step-heading">Review &amp; download</h1>
+      <h1 ref={headingRef} tabIndex={-1} className="step-heading">
+        <span className="sr-only">Step 3 of 3: </span>Review &amp; download
+      </h1>
       <ul className="review__list">
         {own.map((file) => (
           <li key={file.id} className="review__row">

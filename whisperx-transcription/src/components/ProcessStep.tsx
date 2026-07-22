@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import type { TranscriptFile } from '../types';
 import { formatBytes } from '../lib/utils';
 import { StatusBadge } from './StatusBadge';
@@ -5,13 +6,14 @@ import { WaveIcon } from './WaveIcon';
 import './ProcessStep.css';
 
 interface ProcessStepProps {
+  headingRef: RefObject<HTMLHeadingElement | null>;
   files: TranscriptFile[];
   onRetryFile: (id: string) => void;
   onBackToUpload: () => void;
   onContinueToReview: () => void;
 }
 
-export function ProcessStep({ files, onRetryFile, onBackToUpload, onContinueToReview }: ProcessStepProps) {
+export function ProcessStep({ headingRef, files, onRetryFile, onBackToUpload, onContinueToReview }: ProcessStepProps) {
   // Every file stays in the shared cloud queue while it uploads or processes.
   // Once one of the current user's own files finishes, it is lifted out of the
   // queue and promoted to the "Completed" list above. Other users' (external)
@@ -26,7 +28,9 @@ export function ProcessStep({ files, onRetryFile, onBackToUpload, onContinueToRe
 
   return (
     <div>
-      <h1 className="step-heading">Processing</h1>
+      <h1 ref={headingRef} tabIndex={-1} className="step-heading">
+        <span className="sr-only">Step 2 of 3: </span>Processing
+      </h1>
 
       {finishedFiles.length > 0 && (
         <section className="process__completed">
