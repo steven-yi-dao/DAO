@@ -1,0 +1,21 @@
+version: 1
+# Monorepo: the git root is DAO/, the app lives in whisperx-transcription/.
+# appRoot scopes every path below to that subfolder (artifacts baseDirectory
+# is relative to it, so `dist` resolves to whisperx-transcription/dist).
+applications:
+  - appRoot: whisperx-transcription
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: dist
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
