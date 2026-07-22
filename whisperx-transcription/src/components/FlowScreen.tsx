@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
 import type { FlowStep, TranscriptFile, TranscriptionSettings } from '../types';
 import { StepIndicator } from './StepIndicator';
@@ -51,12 +52,24 @@ export function FlowScreen({
   onBackToProcess,
   onViewFile,
 }: FlowScreenProps) {
+  // Each step's h1 is the focus target on step change: the previous step's
+  // content (including whatever button was focused) unmounts when `step`
+  // changes, so without this the browser drops focus to <body> and screen
+  // readers announce whatever's nearest in the DOM (e.g. the header) instead
+  // of the new step.
+  const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    headingRef.current?.focus();
+  }, [step]);
+
   return (
     <>
       <StepIndicator step={step} onStepClick={onStepClick} />
       <div className="flow-screen__body">
         {step === 1 && (
           <UploadStep
+            headingRef={headingRef}
             files={files}
             settingsOpen={settingsOpen}
             settings={settings}
@@ -74,13 +87,16 @@ export function FlowScreen({
         )}
         {step === 2 && (
           <ProcessStep
+            headingRef={headingRef}
             files={files}
             onRetryFile={onRetryFile}
             onBackToUpload={onBackToUpload}
             onContinueToReview={onContinueToReview}
           />
         )}
-        {step === 3 && <ReviewStep files={files} onViewFile={onViewFile} onBackToProcess={onBackToProcess} />}
+        {step === 3 && (
+          <ReviewStep headingRef={headingRef} files={files} onViewFile={onViewFile} onBackToProcess={onBackToProcess} />
+        )}
       </div>
     </>
   );

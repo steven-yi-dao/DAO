@@ -8,12 +8,19 @@
   box-sizing: border-box;
 }
 
-/* Shared step heading used by Upload/Process/Review */
+/* Shared step heading used by Upload/Process/Review. Receives programmatic
+   focus on step change (see FlowScreen.tsx) so screen readers announce the
+   new step instead of losing focus to the unmounted previous step; outline
+   is suppressed since this focus isn't a keyboard-navigation cue. */
 .step-heading {
   font-size: 17px;
   font-weight: 700;
   color: var(--color-text);
   margin: 0 0 var(--space-4);
+}
+
+.step-heading:focus {
+  outline: none;
 }
 
 /* Shared file-name / metadata typography used across file rows */

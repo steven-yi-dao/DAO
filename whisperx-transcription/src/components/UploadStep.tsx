@@ -9,6 +9,7 @@ import { ModalDialog } from './ModalDialog';
 import './UploadStep.css';
 
 interface UploadStepProps {
+  headingRef: RefObject<HTMLHeadingElement | null>;
   files: TranscriptFile[];
   settingsOpen: boolean;
   settings: TranscriptionSettings;
@@ -25,6 +26,7 @@ interface UploadStepProps {
 }
 
 export function UploadStep({
+  headingRef,
   files,
   settingsOpen,
   settings,
@@ -51,7 +53,9 @@ export function UploadStep({
 
   return (
     <div>
-      <h1 className="step-heading">Upload audio</h1>
+      <h1 ref={headingRef} tabIndex={-1} className="step-heading">
+        <span className="sr-only">Step 1 of 3: </span>Upload audio
+      </h1>
 
       <div
         role="button"

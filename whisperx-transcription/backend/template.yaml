@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: WhisperX transcription backend - storage, auth, API and GPU async inference.
+
+# The SageMaker half of this stack only materialises once InferenceImageUri is
+# supplied, so Phases 1/4 can deploy against an empty ECR repo and Phase 3 lands
+# as a second `sam deploy` after the image is pushed.
+
+Parameters:
+  InferenceImageUri:
+    Type: String
+    Default: ''
+    Description: ECR image URI for the WhisperX container. Leave empty to skip all SageMaker resources.
+  InstanceType:
+    Type: String
+    Default: ml.g4dn.xlarge
+    AllowedValues: [ml.g4dn.xlarge, ml.g5.xlarge]
+    Description: GPU instance for the async endpoint. g5 (A10G/24GB) is the escape hatch if large-v3 + pyannote OOMs on the T4.
+  MaxInstances:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    Description: Autoscaling ceiling. One instance serves one job at a time.
+  AllowedOrigin:
+    Type: String
+    Default: http://localhost:5173
+    Description: SPA origin for CORS on the API and on presigned S3 PUT/GET.
+  UploadRetentionDays:
+    Type: Number
+    Default: 7
+    Description: Days before uploaded audio expires. Transcripts and logs are retained indefinitely.
+
+Conditions:
+  HasImage: !Not [!Equals [!Ref InferenceImageUri, '']]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        DATA_BUCKET: !Ref DataBucket
+        JOBS_TABLE: !Ref JobsTable
+        MAX_UPLOAD_BYTES: '524288000'
+        POWERTOOLS_LOG_LEVEL: INFO
+
+Resources:
+  # ---------------------------------------------------------------- storage --
+
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'whisperx-${AWS::AccountId}-${AWS::Region}-data'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireUploads
+            Status: Enabled
+            Prefix: uploads/
+            ExpirationInDays: !Ref UploadRetentionDays
+          - Id: ExpireManifests
+            Status: Enabled
+            Prefix: manifests/
+            ExpirationInDays: 30
+          - Id: ExpireAsyncOutput
+            Status: Enabled
+            Prefix: async-output/
+            ExpirationInDays: 30
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: [!Ref AllowedOrigin]
+            AllowedMethods: [PUT, GET, HEAD]
+            AllowedHeaders: ['*']
+            ExposedHeaders: [ETag]
+            MaxAge: 3000
+
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: whisperx-jobs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: inferenceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # onComplete receives only an inferenceId from SNS and has no way to
+        # reconstruct the USER#/JOB# primary key, so it resolves the row here.
+        # Sparse: only rows that reached QUEUED carry inferenceId.
+        - IndexName: inferenceId-index
+          KeySchema:
+            - AttributeName: inferenceId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  HfTokenSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: whisperx/hf-token
+      Description: Hugging Face read token with access to pyannote/speaker-diarization-3.1 and pyannote/segmentation-3.0.
+
+  InferenceRepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: whisperx-inference
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules":[{"rulePriority":1,"description":"keep last 5 images",
+          "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},
+          "action":{"type":"expire"}}]}
+
+  # ------------------------------------------------------------------- auth --
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: whisperx-users
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true # invite-only; no self-signup
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: whisperx-spa
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false # public SPA client
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      AccessTokenValidity: 60
+      IdTokenValidity: 60
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+
+  # -------------------------------------------------------------------- api --
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: v1
+      CorsConfiguration:
+        AllowOrigins: [!Ref AllowedOrigin]
+        AllowHeaders: [authorization, content-type]
+        AllowMethods: [GET, POST, OPTIONS]
+        MaxAge: 3000
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              audience: [!Ref UserPoolClient]
+              issuer: !Sub 'https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}'
+
+  # --------------------------------------------------------------- functions --
+
+  CreateJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: create_job.app.lambda_handler
+      Policies:
+        - DynamoDBWritePolicy: {TableName: !Ref JobsTable}
+        - S3WritePolicy: {BucketName: !Ref DataBucket}
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /jobs
+
+  SubmitJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: submit_job.app.lambda_handler
+      Environment:
+        Variables:
+          ENDPOINT_NAME: !If [HasImage, !GetAtt AsyncEndpoint.EndpointName, '']
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref JobsTable}
+        - S3CrudPolicy: {BucketName: !Ref DataBucket}
+        - Statement:
+            - Effect: Allow
+              Action: sagemaker:InvokeEndpointAsync
+              Resource: !Sub 'arn:${AWS::Partition}:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/whisperx-async'
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /jobs/{id}/submit
+
+  ListJobsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: list_jobs.app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy: {TableName: !Ref JobsTable}
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /jobs
+
+  GetTranscriptFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: get_transcript.app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy: {TableName: !Ref JobsTable}
+        - S3ReadPolicy: {BucketName: !Ref DataBucket}
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /jobs/{id}
+
+  OnCompleteFunction:
+    Type: AWS::Serverless::Function
+    Condition: HasImage
+    Properties:
+      CodeUri: src/
+      Handler: on_complete.app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref JobsTable}
+        - S3ReadPolicy: {BucketName: !Ref DataBucket}
+      Events:
+        Success:
+          Type: SNS
+          Properties:
+            Topic: !Ref SuccessTopic
+        Error:
+          Type: SNS
+          Properties:
+            Topic: !Ref ErrorTopic
+
+  # ---------------------------------------------------------- notifications --
+
+  SuccessTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasImage
+    Properties:
+      TopicName: whisperx-inference-success
+
+  ErrorTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasImage
+    Properties:
+      TopicName: whisperx-inference-error
+
+  # ------------------------------------------------------------- sagemaker --
+
+  SageMakerExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: HasImage
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: sagemaker.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSageMakerFullAccess'
+      Policies:
+        - PolicyName: whisperx-data-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub '${DataBucket.Arn}/uploads/*'
+                  - !Sub '${DataBucket.Arn}/manifests/*'
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource:
+                  - !Sub '${DataBucket.Arn}/transcripts/*'
+                  - !Sub '${DataBucket.Arn}/logs/*'
+                  - !Sub '${DataBucket.Arn}/async-output/*'
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref HfTokenSecret
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: [!Ref SuccessTopic, !Ref ErrorTopic]
+
+  InferenceModel:
+    Type: AWS::SageMaker::Model
+    Condition: HasImage
+    Properties:
+      ModelName: whisperx
+      ExecutionRoleArn: !GetAtt SageMakerExecutionRole.Arn
+      PrimaryContainer:
+        Image: !Ref InferenceImageUri
+        Environment:
+          HF_TOKEN_SECRET_ARN: !Ref HfTokenSecret
+          SAGEMAKER_PROGRAM: inference.py
+          # Cold start pulls model weights before the first job; give it room.
+          SAGEMAKER_MODEL_SERVER_TIMEOUT: '3600'
+
+  EndpointConfig:
+    Type: AWS::SageMaker::EndpointConfig
+    Condition: HasImage
+    Properties:
+      ProductionVariants:
+        - VariantName: AllTraffic
+          ModelName: !GetAtt InferenceModel.ModelName
+          InitialInstanceCount: 1 # autoscaling drops this to 0 once idle
+          InstanceType: !Ref InstanceType
+          InitialVariantWeight: 1.0
+      AsyncInferenceConfig:
+        ClientConfig:
+          MaxConcurrentInvocationsPerInstance: 1 # one T4 == one job
+        OutputConfig:
+          S3OutputPath: !Sub 's3://${DataBucket}/async-output/'
+          NotificationConfig:
+            SuccessTopic: !Ref SuccessTopic
+            ErrorTopic: !Ref ErrorTopic
+
+  AsyncEndpoint:
+    Type: AWS::SageMaker::Endpoint
+    Condition: HasImage
+    Properties:
+      EndpointName: whisperx-async
+      EndpointConfigName: !GetAtt EndpointConfig.EndpointConfigName
+
+  # Scale-to-zero: the backlog metric is what lets the variant sit at 0 instances
+  # and still wake on an invocation sitting in the async queue.
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: HasImage
+    Properties:
+      ServiceNamespace: sagemaker
+      ResourceId: !Sub 'endpoint/${AsyncEndpoint.EndpointName}/variant/AllTraffic'
+      ScalableDimension: sagemaker:variant:DesiredInstanceCount
+      MinCapacity: 0
+      MaxCapacity: !Ref MaxInstances
+      RoleARN: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/sagemaker.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_SageMakerEndpoint'
+
+  ScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: HasImage
+    Properties:
+      PolicyName: whisperx-backlog-tracking
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref ScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: 1.0
+        CustomizedMetricSpecification:
+          MetricName: ApproximateBacklogSizePerInstance
+          Namespace: AWS/SageMaker
+          Statistic: Average
+          Dimensions:
+            - Name: EndpointName
+              Value: !GetAtt AsyncEndpoint.EndpointName
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+Outputs:
+  ApiUrl:
+    Description: Base URL for the SPA (VITE_API_URL).
+    Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/v1'
+  UserPoolId:
+    Description: VITE_COGNITO_USER_POOL_ID
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: VITE_COGNITO_CLIENT_ID
+    Value: !Ref UserPoolClient
+  DataBucketName:
+    Value: !Ref DataBucket
+  EcrRepositoryUri:
+    Description: Push the container here, then redeploy with InferenceImageUri set.
+    Value: !GetAtt InferenceRepo.RepositoryUri

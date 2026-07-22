@@ -16,7 +16,7 @@
 | **Auth** | **Amazon Cognito** user pool, small invite-only internal team. JWT-protected API. History keyed by user `sub`. |
 | **Edits** | Backend stores the **original** WhisperX output only. Review-step edits are **client-side / download-only**. |
 | **Job updates** | **Polling.** Frontend polls `GET /jobs` every ~3s. SNS→Lambda keeps DynamoDB fresh. |
-| **Region** | `us-east-1` (matches mock). |
+| **Region** | `us-east-2` (matches mock). |
 | **Starting point** | Greenfield — plan builds everything. |
 
 **Assumed defaults (change if wrong):** single S3 bucket with prefixes; max upload 500 MB (matches UI); uploads auto-expire after 7 days; transcripts/logs retained indefinitely; max 2 concurrent GPU instances.
@@ -121,7 +121,7 @@ container/
 ### `container/Dockerfile`
 ```dockerfile
 # CUDA + cuDNN base with Python; matches T4 (g4dn) drivers on SageMaker
-FROM 763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-inference:2.3-gpu-py311
+FROM 763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-inference:2.3-gpu-py311
 
 ENV PYTHONUNBUFFERED=1 \
     HF_HOME=/opt/ml/model/hf-cache \
@@ -324,7 +324,7 @@ ddb.update_item(... status="QUEUED", inferenceId=resp["InferenceId"] ...)
 ## 7. Phased build
 
 ### Phase 0 — Account prep & quotas *(do first; the quota can take a day)*
-- [ ] Pick region `us-east-1`; confirm billing alarm exists.
+- [ ] Pick region `us-east-2`; confirm billing alarm exists.
 - [ ] **Service Quotas → SageMaker** → request quota for **`ml.g4dn.xlarge` for endpoint usage ≥ 2** and **for async endpoint usage** if listed separately. *New accounts default to 0 — nothing runs until this is granted.*
 - [ ] Create a Hugging Face account, accept licenses for **`pyannote/speaker-diarization-3.1`** and **`pyannote/segmentation-3.0`**, generate a read token.
 
