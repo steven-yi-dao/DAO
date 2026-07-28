@@ -24,7 +24,9 @@ import {
   seedQueue,
   triggerDownload,
 } from './lib/utils';
+import { useQueueAnnouncements } from './hooks/useQueueAnnouncements';
 import { Header } from './components/Header';
+import { LiveAnnouncer } from './components/LiveAnnouncer';
 import { ConnectGate } from './components/ConnectGate';
 import { HistoryScreen } from './components/HistoryScreen';
 import { TranscriptEditor } from './components/TranscriptEditor';
@@ -443,6 +445,8 @@ export default function App() {
     if (format === 'json') triggerDownload(base + '.json', buildJson(file), 'application/json');
   }
 
+  const queueAnnouncement = useQueueAnnouncements(files);
+
   const isConnected = session === 'connected';
   const connecting = session === 'connecting';
   const selected = getSelectedFile();
@@ -455,6 +459,8 @@ export default function App() {
       <a className="skip-link" href="#main">
         Skip to main content
       </a>
+
+      <LiveAnnouncer announcement={queueAnnouncement} />
 
       <Header isConnected={isConnected} nav={nav} onToggleHistory={() => setNav(nav === 'history' ? 'new' : 'history')} />
 
