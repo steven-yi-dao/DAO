@@ -100,11 +100,8 @@ export function ProcessStep({ headingRef, files, onRetryFile, onBackToUpload, on
                         <div className="progress-bar__fill" style={{ width: `${Math.round(file.progress)}%` }} />
                       </div>
                     )}
-                    {file.status === 'error' && (
-                      <div className="process__error" role="alert">
-                        {file.errorMsg}
-                      </div>
-                    )}
+                    {/* Failures are spoken by the queue announcer, with the file name attached. */}
+                    {file.status === 'error' && <div className="process__error">{file.errorMsg}</div>}
                   </li>
                 );
               })}
