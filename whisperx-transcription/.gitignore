@@ -24,7 +24,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Backend (Python / SAM)
+# Backend (Python)
 __pycache__/
 *.pyc
-.aws-sam/
+backend/.env
+backend/data/

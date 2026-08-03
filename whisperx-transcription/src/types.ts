@@ -33,12 +33,6 @@ export type FlowStep = 1 | 2 | 3;
 export type SessionState = 'disconnected' | 'connecting' | 'connected';
 export type FileSource = 'queue' | 'history';
 
-export interface TranscriptionSettings {
-  language: string;
-  model: string;
-  diarization: boolean;
-}
-
 export interface Instance {
   type: string;
   region: string;

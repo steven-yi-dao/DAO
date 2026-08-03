@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import type { FlowStep, TranscriptFile, TranscriptionSettings } from '../types';
+import type { FlowStep, TranscriptFile } from '../types';
 import { StepIndicator } from './StepIndicator';
 import { UploadStep } from './UploadStep';
 import { ProcessStep } from './ProcessStep';
@@ -11,11 +11,7 @@ interface FlowScreenProps {
   step: FlowStep;
   onStepClick: (step: FlowStep) => void;
   files: TranscriptFile[];
-  settingsOpen: boolean;
-  settings: TranscriptionSettings;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onToggleSettings: () => void;
-  onUpdateSetting: <K extends keyof TranscriptionSettings>(key: K, value: TranscriptionSettings[K]) => void;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onOpenPicker: () => void;
@@ -34,11 +30,7 @@ export function FlowScreen({
   step,
   onStepClick,
   files,
-  settingsOpen,
-  settings,
   fileInputRef,
-  onToggleSettings,
-  onUpdateSetting,
   onDragOver,
   onDrop,
   onOpenPicker,
@@ -71,11 +63,7 @@ export function FlowScreen({
           <UploadStep
             headingRef={headingRef}
             files={files}
-            settingsOpen={settingsOpen}
-            settings={settings}
             fileInputRef={fileInputRef}
-            onToggleSettings={onToggleSettings}
-            onUpdateSetting={onUpdateSetting}
             onDragOver={onDragOver}
             onDrop={onDrop}
             onOpenPicker={onOpenPicker}

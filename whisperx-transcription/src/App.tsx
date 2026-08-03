@@ -7,7 +7,6 @@ import type {
   NavTab,
   SessionState,
   TranscriptFile,
-  TranscriptionSettings,
 } from './types';
 import {
   ALLOWED_EXTENSIONS,
@@ -55,13 +54,6 @@ export default function App() {
   const [step, setStep] = useState<FlowStep>(1);
   const [playhead, setPlayhead] = useState(0);
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<TranscriptionSettings>({
-    language: 'en-US',
-    model: 'balanced',
-    diarization: false,
-  });
-
   const [files, setFiles] = useState<TranscriptFile[]>(() => seedQueue());
   const [history, setHistory] = useState<TranscriptFile[]>(() => seedHistory());
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
@@ -77,8 +69,6 @@ export default function App() {
   // File ids whose completion (history entry / queue removal) is already handled,
   // so the effect below stays idempotent across re-renders.
   const completionHandledRef = useRef<Set<string>>(new Set());
-  const settingsRef = useRef(settings);
-  settingsRef.current = settings;
   const filesRef = useRef(files);
   filesRef.current = files;
 
@@ -169,13 +159,13 @@ export default function App() {
       if (attemptNumber === 1) {
         setAttempts(attemptNumber);
         setSession('disconnected');
-        setConnectError("Couldn't provision a SageMaker instance. This is usually temporary.");
+        setConnectError("Couldn't reach the transcription server. This is usually temporary.");
       } else {
         const id = 'sess-' + Math.random().toString(16).slice(2, 8);
         setAttempts(attemptNumber);
         setSession('connected');
         setConnectError(null);
-        setInstance({ type: 'ml.g4dn.xlarge', region: 'us-east-2', id });
+        setInstance({ type: 'g4dn.xlarge', region: 'us-east-2', id });
         setLastActivity(Date.now());
         setIdleWarn(false);
         setIdleSecondsRemaining(IDLE_TOTAL_S);
@@ -201,14 +191,6 @@ export default function App() {
     setLastActivity(Date.now());
     setIdleWarn(false);
     setIdleSecondsRemaining(IDLE_TOTAL_S);
-  }
-
-  function toggleSettings() {
-    setSettingsOpen((v) => !v);
-  }
-
-  function updateSetting<K extends keyof TranscriptionSettings>(key: K, value: TranscriptionSettings[K]) {
-    setSettings((s) => ({ ...s, [key]: value }));
   }
 
   function trackInterval(id: ReturnType<typeof setInterval>) {
@@ -344,7 +326,6 @@ export default function App() {
         return;
       }
       const delta = 8 + Math.random() * 14;
-      const diarization = settingsRef.current.diarization;
       setFiles((prev) =>
         prev.map((f) => {
           if (f.id !== fileId || f.status !== 'processing') return f;
@@ -362,7 +343,7 @@ export default function App() {
                 ...f,
                 status: 'done' as FileStatus,
                 progress: 100,
-                segments: genSegments(diarization),
+                segments: genSegments(false),
               };
         }),
       );
@@ -488,11 +469,7 @@ export default function App() {
             step={step}
             onStepClick={setStep}
             files={files}
-            settingsOpen={settingsOpen}
-            settings={settings}
             fileInputRef={fileInputRef}
-            onToggleSettings={toggleSettings}
-            onUpdateSetting={updateSetting}
             onDragOver={onDragOver}
             onDrop={onDrop}
             onOpenPicker={openPicker}

@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import type { RefObject } from 'react';
-import type { TranscriptFile, TranscriptionSettings } from '../types';
+import type { TranscriptFile } from '../types';
 import { formatBytes } from '../lib/utils';
-import { LANGUAGE_LABELS, MODEL_LABELS } from '../lib/statusMeta';
 import { StatusBadge } from './StatusBadge';
 import { WaveIcon } from './WaveIcon';
 import { ModalDialog } from './ModalDialog';
@@ -11,11 +10,7 @@ import './UploadStep.css';
 interface UploadStepProps {
   headingRef: RefObject<HTMLHeadingElement | null>;
   files: TranscriptFile[];
-  settingsOpen: boolean;
-  settings: TranscriptionSettings;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onToggleSettings: () => void;
-  onUpdateSetting: <K extends keyof TranscriptionSettings>(key: K, value: TranscriptionSettings[K]) => void;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onOpenPicker: () => void;
@@ -28,11 +23,7 @@ interface UploadStepProps {
 export function UploadStep({
   headingRef,
   files,
-  settingsOpen,
-  settings,
   fileInputRef,
-  onToggleSettings,
-  onUpdateSetting,
   onDragOver,
   onDrop,
   onOpenPicker,
@@ -83,63 +74,6 @@ export function UploadStep({
           hidden
           onChange={onFileInputChange}
         />
-      </div>
-
-      <div className="upload-settings">
-        <button
-          type="button"
-          className="upload-settings__toggle"
-          onClick={onToggleSettings}
-          aria-expanded={settingsOpen}
-          aria-controls="upload-settings-panel"
-        >
-          Transcription settings <span aria-hidden="true">{settingsOpen ? '▴' : '▾'}</span>
-        </button>
-        {settingsOpen && (
-          <div id="upload-settings-panel" className="settings-panel">
-            <label className="settings-field">
-              Language
-              <select
-                className="settings-select"
-                value={settings.language}
-                onChange={(e) => onUpdateSetting('language', e.target.value)}
-              >
-                {Object.entries(LANGUAGE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-field">
-              Model
-              <select
-                className="settings-select"
-                value={settings.model}
-                onChange={(e) => onUpdateSetting('model', e.target.value)}
-              >
-                {Object.entries(MODEL_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="settings-field">
-              <span id="diarization-label">Label speakers (beta)</span>
-              <button
-                type="button"
-                className="switch"
-                role="switch"
-                aria-checked={settings.diarization}
-                aria-labelledby="diarization-label"
-                onClick={() => onUpdateSetting('diarization', !settings.diarization)}
-              >
-                <span className="switch__thumb" />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {stagedFiles.length > 0 && (
