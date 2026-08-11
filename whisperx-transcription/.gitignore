@@ -29,3 +29,9 @@ __pycache__/
 *.pyc
 backend/.env
 backend/data/
+backend/.venv/
+backend/.venv-worker/
+
+# Scratch /data for local dev and the contract test
+backend/.devdata/
+backend/.contract-data/

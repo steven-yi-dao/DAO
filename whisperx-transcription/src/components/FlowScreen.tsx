@@ -10,7 +10,12 @@ import './FlowScreen.css';
 interface FlowScreenProps {
   step: FlowStep;
   onStepClick: (step: FlowStep) => void;
-  files: TranscriptFile[];
+  /** Picked in this browser, not sent yet. */
+  stagedFiles: TranscriptFile[];
+  /** The shared server queue, as rendered in the queue card. */
+  queueFiles: TranscriptFile[];
+  /** Uploaded from this browser this session — what the flow is walking through. */
+  sessionFiles: TranscriptFile[];
   fileInputRef: RefObject<HTMLInputElement | null>;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -29,7 +34,9 @@ interface FlowScreenProps {
 export function FlowScreen({
   step,
   onStepClick,
-  files,
+  stagedFiles,
+  queueFiles,
+  sessionFiles,
   fileInputRef,
   onDragOver,
   onDrop,
@@ -62,7 +69,8 @@ export function FlowScreen({
         {step === 1 && (
           <UploadStep
             headingRef={headingRef}
-            files={files}
+            stagedFiles={stagedFiles}
+            queueFiles={queueFiles}
             fileInputRef={fileInputRef}
             onDragOver={onDragOver}
             onDrop={onDrop}
@@ -76,14 +84,20 @@ export function FlowScreen({
         {step === 2 && (
           <ProcessStep
             headingRef={headingRef}
-            files={files}
+            queueFiles={queueFiles}
+            sessionFiles={sessionFiles}
             onRetryFile={onRetryFile}
             onBackToUpload={onBackToUpload}
             onContinueToReview={onContinueToReview}
           />
         )}
         {step === 3 && (
-          <ReviewStep headingRef={headingRef} files={files} onViewFile={onViewFile} onBackToProcess={onBackToProcess} />
+          <ReviewStep
+            headingRef={headingRef}
+            files={sessionFiles}
+            onViewFile={onViewFile}
+            onBackToProcess={onBackToProcess}
+          />
         )}
       </div>
     </>

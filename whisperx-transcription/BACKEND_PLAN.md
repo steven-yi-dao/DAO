@@ -28,7 +28,7 @@ Cognito — was removed in favour of one server.
 | **Retention** | Source audio deleted after 7 days; rows and transcripts kept |
 | **Retries** | Explicit, tracked by an `attempt` counter |
 | **Edits** | Backend stores the original WhisperX output only; review-step edits stay client-side |
-| **Job updates** | Polling. The frontend polls `GET /api/jobs` |
+| **Job updates** | Polling. The frontend polls `GET /api/jobs` every 2s |
 | **Max upload** | 500 MB, enforced while streaming |
 
 Explicitly **not** concerns, per the stated requirements: idle cost, scaling,
@@ -161,19 +161,21 @@ Two fixes had to be carried into the new code rather than deleted with the old:
 - 50 unit tests: claim/recovery/retry/retention, upload validation and
   placement, and the worker's DONE/ERROR transitions
 - Provisioning and deployment runbook
+- **The SPA calls the API.** `src/lib/api.ts` is the typed client;
+  `useJobPolling` replaces the old `setInterval` drivers; the connect gate is a
+  `GET /api/health` check; `vite.config.ts` proxies `/api` to `localhost:8000`.
+  The mock fixtures are gone.
+- 24 client unit tests plus a 16-case contract test that drives the real client
+  against a real uvicorn (`npm run test:contract`).
 
 **Not done**
 
-- **The SPA is still mock-driven.** Nothing under `src/` calls the API. Wiring
-  it is the next branch: replace `App.tsx`'s `setInterval` drivers and the
-  `seedQueue`/`seedHistory` fixtures with real calls, add a typed client for the
-  routes above, and add a Vite dev proxy to `localhost:8000`.
-- Nothing has been deployed to EC2. Verified locally and by the test suite only.
+- Nothing has been deployed to EC2. Verified locally and by the test suites only.
 - Root `amplify.yml` still hosts the SPA on Amplify. Once Caddy serves `dist/`
   from the instance, Amplify becomes redundant and should be retired.
-- The idle-timeout UX still assumes a per-session instance. With an
-  always-running server it is cosmetic; decide whether to keep it when wiring
-  the frontend.
+- The idle-timeout UX still assumes a per-session instance. It now only clears
+  the local view — jobs live on the server and come back on reconnect — but on
+  an always-running server it remains cosmetic.
 - Transcript retention and PII policy — audio and transcripts may be sensitive.
   Source audio is deleted after 7 days; transcripts are currently kept forever.
 

@@ -11,14 +11,13 @@ interface ReviewStepProps {
 }
 
 export function ReviewStep({ headingRef, files, onViewFile, onBackToProcess }: ReviewStepProps) {
-  const own = files.filter((f) => !f.external);
   return (
     <div>
       <h1 ref={headingRef} tabIndex={-1} className="step-heading">
         <span className="sr-only">Step 3 of 3: </span>Review &amp; download
       </h1>
       <ul className="review__list">
-        {own.map((file) => (
+        {files.map((file) => (
           <li key={file.id} className="review__row">
             <div className="review__row-main">
               <div className="file-name">{file.name}</div>

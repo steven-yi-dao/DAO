@@ -15,3 +15,15 @@
   flex-direction: column;
   overflow: hidden;
 }
+
+/* Failures that belong to no single row: a refused delete, a retry the server
+   rejected, a poll that can't reach the server. */
+.app-alert {
+  flex: none;
+  margin: 0;
+  padding: 10px var(--space-5);
+  background: var(--color-status-error-bg);
+  border-bottom: 1px solid var(--color-status-error-border);
+  color: var(--color-status-error-fg);
+  font-size: 13px;
+}

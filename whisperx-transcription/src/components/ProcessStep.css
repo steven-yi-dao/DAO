@@ -72,6 +72,30 @@
   border-radius: 4px;
 }
 
+/* Transcription has no percentage to report, so the bar sweeps instead of
+   filling — it shows work is happening without claiming how much is left. */
+.progress-bar--indeterminate .progress-bar__fill {
+  width: 35%;
+  animation: progress-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(285%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-bar--indeterminate .progress-bar__fill {
+    width: 100%;
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 .process__error {
   font-size: 12px;
   color: var(--color-danger);

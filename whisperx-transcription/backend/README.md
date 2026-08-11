@@ -95,6 +95,20 @@ Stdlib `unittest`, no pytest. `torch`/`whisperx` are stubbed and FastAPI is
 optional — the db, storage, and worker suites run against a bare interpreter,
 and the API suite skips itself if `fastapi`/`httpx` aren't installed.
 
+The SPA has a matching contract test that runs the real app against this API.
+It needs an interpreter with the API's dependencies, which is also what makes
+the whole suite above run:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install fastapi uvicorn python-multipart httpx
+```
+
+Then, from the repository root, `npm run test:contract`. It starts uvicorn on
+port 8123 against a scratch `backend/.contract-data`, drives every route
+through `src/lib/api.ts`, and asserts the job JSON matches the client's `ApiJob`
+field for field. No GPU and no torch: `app/main.py` never imports `transcribe`.
+
 ## Provisioning the instance
 
 One-time manual setup. Everything here is a handful of console or CLI steps;

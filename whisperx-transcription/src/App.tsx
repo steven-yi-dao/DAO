@@ -1,13 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import type {
-  FileSource,
-  FileStatus,
-  FlowStep,
-  Instance,
-  NavTab,
-  SessionState,
-  TranscriptFile,
-} from './types';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { FileSource, FlowStep, NavTab, Segment, SessionState, TranscriptFile } from './types';
 import {
   ALLOWED_EXTENSIONS,
   MAX_BYTES,
@@ -17,12 +9,18 @@ import {
   buildJson,
   buildSrt,
   buildTxt,
-  estimateDuration,
-  genSegments,
-  seedHistory,
-  seedQueue,
   triggerDownload,
 } from './lib/utils';
+import {
+  createJob,
+  deleteJob,
+  errorMessage,
+  getTranscript,
+  health,
+  mapJob,
+  retryJob,
+} from './lib/api';
+import { useJobPolling } from './hooks/useJobPolling';
 import { useQueueAnnouncements } from './hooks/useQueueAnnouncements';
 import { Header } from './components/Header';
 import { LiveAnnouncer } from './components/LiveAnnouncer';
@@ -43,8 +41,6 @@ function nextId(prefix: string): string {
 export default function App() {
   const [session, setSession] = useState<SessionState>('disconnected');
   const [connectError, setConnectError] = useState<string | null>(null);
-  const [attempts, setAttempts] = useState(0);
-  const [instance, setInstance] = useState<Instance | null>(null);
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [idleWarn, setIdleWarn] = useState(false);
   const [idleSecondsLeft, setIdleSecondsLeft] = useState(0);
@@ -54,78 +50,56 @@ export default function App() {
   const [step, setStep] = useState<FlowStep>(1);
   const [playhead, setPlayhead] = useState(0);
 
-  const [files, setFiles] = useState<TranscriptFile[]>(() => seedQueue());
-  const [history, setHistory] = useState<TranscriptFile[]>(() => seedHistory());
+  // Staged files plus every job the server currently knows about, reconciled by
+  // the polling effect below. Rows without a `jobId` exist only in this browser.
+  const [files, setFiles] = useState<TranscriptFile[]>([]);
+  // Jobs uploaded from this browser this session. Not ownership — the backend
+  // has no accounts — just which jobs belong to the flow the user is walking.
+  const [sessionJobIds, setSessionJobIds] = useState<string[]>([]);
+  // Fetched transcripts, keyed by job id. Review-step edits are applied here and
+  // stay client-side; the backend keeps the original WhisperX output only.
+  const [transcripts, setTranscripts] = useState<Record<string, Segment[]>>({});
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<FileSource | null>(null);
-
-  // Set once the user hits "Start transcription" — until then their own queued
-  // files wait, while external jobs may take the shared processing slot.
-  const [transcriptionStarted, setTranscriptionStarted] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const seedStartedRef = useRef(false);
-  const intervalsRef = useRef<Set<ReturnType<typeof setInterval>>>(new Set());
-  // File ids whose completion (history entry / queue removal) is already handled,
-  // so the effect below stays idempotent across re-renders.
-  const completionHandledRef = useRef<Set<string>>(new Set());
+  // The picked File objects themselves, which the TranscriptFile rows can't
+  // carry. Without these there is nothing to POST.
+  const pendingFilesRef = useRef<Map<string, File>>(new Map());
   const filesRef = useRef(files);
   filesRef.current = files;
 
-  useEffect(() => {
-    return () => {
-      intervalsRef.current.forEach((id) => clearInterval(id));
-      intervalsRef.current.clear();
-    };
-  }, []);
+  const isConnected = session === 'connected';
+  const { jobs, error: pollError } = useJobPolling(isConnected);
 
-  // Once the user connects, kick off any external (other users') jobs already in the
-  // shared cloud queue: uploads advance in the background, then join the queue.
+  // Fold the polled server state into the local rows. Staged and uploading rows
+  // have no server counterpart yet and are carried through untouched; rows that
+  // already have a job id keep their client id so React keys and the queue
+  // announcer don't see them vanish and reappear.
   useEffect(() => {
-    if (session !== 'connected' || seedStartedRef.current) return;
-    seedStartedRef.current = true;
-    files.forEach((f) => {
-      if (f.external && f.status === 'uploading') runSeedJob(f.id);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session]);
-
-  // Queue engine: the shared instance works one file at a time, in queue order.
-  // Whenever the processing slot is free, promote the next eligible queued file —
-  // external jobs run on their own; the user's files wait for "Start transcription".
-  useEffect(() => {
-    if (session !== 'connected') return;
-    if (files.some((f) => f.status === 'processing')) return;
-    const next = files.find((f) => f.status === 'queued' && (f.external || transcriptionStarted));
-    if (!next) return;
-    const timer = setTimeout(() => {
-      setFiles((prev) => {
-        if (prev.some((f) => f.status === 'processing')) return prev;
-        return prev.map((f) => (f.id === next.id ? { ...f, status: 'processing' as FileStatus, progress: 1 } : f));
+    setFiles((prev) => {
+      const local = prev.filter((f) => !f.jobId);
+      const byJobId = new Map(prev.filter((f) => f.jobId).map((f) => [f.jobId as string, f]));
+      // The API returns newest first; the queue reads oldest first, since
+      // position 1 is the job that runs next.
+      const server = [...jobs].reverse().map((job) => {
+        const mapped = mapJob(job);
+        const existing = byJobId.get(job.jobId);
+        if (!existing) return mapped;
+        const unchanged =
+          existing.status === mapped.status &&
+          existing.duration === mapped.duration &&
+          existing.errorMsg === mapped.errorMsg &&
+          existing.date === mapped.date &&
+          existing.name === mapped.name;
+        return unchanged ? existing : { ...mapped, id: existing.id };
       });
-      runProgress(next.id);
-    }, 150);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files, session, transcriptionStarted]);
-
-  // React to files finishing: log the user's own results to history once, and drop
-  // other users' completed jobs from the shared queue after showing them briefly.
-  useEffect(() => {
-    files.forEach((f) => {
-      const finished = (f.status === 'done' || f.status === 'error') && f.progress >= 100;
-      if (!finished || completionHandledRef.current.has(f.id)) return;
-      completionHandledRef.current.add(f.id);
-      if (f.external) {
-        setTimeout(() => {
-          setFiles((cur) => cur.filter((x) => x.id !== f.id));
-        }, 2500);
-      } else {
-        addHistoryEntry(f);
-      }
+      const next = [...local, ...server];
+      const same = next.length === prev.length && next.every((f, i) => f === prev[i]);
+      return same ? prev : next;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [files]);
+  }, [jobs]);
 
   // Idle-timeout ticker: warns then ends the session after sitting idle too long.
   useEffect(() => {
@@ -151,40 +125,37 @@ export default function App() {
     setLastActivity(Date.now());
   }
 
-  function startSession() {
+  // "Connecting" is a health check against the always-running server, not an
+  // instance launch — there is nothing to start up.
+  async function startSession() {
     setSession('connecting');
     setConnectError(null);
-    const attemptNumber = attempts + 1;
-    setTimeout(() => {
-      if (attemptNumber === 1) {
-        setAttempts(attemptNumber);
-        setSession('disconnected');
-        setConnectError("Couldn't reach the transcription server. This is usually temporary.");
-      } else {
-        const id = 'sess-' + Math.random().toString(16).slice(2, 8);
-        setAttempts(attemptNumber);
-        setSession('connected');
-        setConnectError(null);
-        setInstance({ type: 'g4dn.xlarge', region: 'us-east-2', id });
-        setLastActivity(Date.now());
-        setIdleWarn(false);
-        setIdleSecondsRemaining(IDLE_TOTAL_S);
-        setStep(1);
-      }
-    }, 1300);
+    try {
+      await health();
+      setSession('connected');
+      setLastActivity(Date.now());
+      setIdleWarn(false);
+      setIdleSecondsRemaining(IDLE_TOTAL_S);
+      setStep(1);
+    } catch (err) {
+      setSession('disconnected');
+      setConnectError(errorMessage(err));
+    }
   }
 
+  // Only the local view is dropped. Jobs already on the server outlive the
+  // browser and come back on the next connect.
   function endSession() {
     setSession('disconnected');
-    setInstance(null);
-    setTranscriptionStarted(false);
-    completionHandledRef.current.clear();
+    pendingFilesRef.current.clear();
+    setFiles([]);
+    setSessionJobIds([]);
+    setActionError(null);
     setIdleWarn(false);
     setNavState('new');
     setStep(1);
     setSelectedFileId(null);
     setSelectedSource(null);
-    setFiles([]);
   }
 
   function keepWorking() {
@@ -193,108 +164,60 @@ export default function App() {
     setIdleSecondsRemaining(IDLE_TOTAL_S);
   }
 
-  function trackInterval(id: ReturnType<typeof setInterval>) {
-    intervalsRef.current.add(id);
-    return id;
-  }
-
-  function clearTrackedInterval(id: ReturnType<typeof setInterval>) {
-    clearInterval(id);
-    intervalsRef.current.delete(id);
-  }
-
+  // Validated client-side first so the user gets an answer without a round trip.
+  // The messages match the ones the API returns for the same two rejections.
   function handleFiles(fileList: FileList | null) {
     const arr = Array.from(fileList ?? []);
     if (!arr.length) return;
     const additions: TranscriptFile[] = arr.map((f) => {
       const ext = (f.name.split('.').pop() || '').toLowerCase();
       const id = nextId('f');
+      const base = { id, jobId: null, name: f.name, size: f.size, duration: 0, progress: 0 };
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        return {
-          id,
-          name: f.name,
-          size: f.size,
-          duration: 0,
-          status: 'error',
-          progress: 0,
-          errorMsg: 'Unsupported format — try MP3, WAV, M4A, FLAC, or OGG.',
-          uploader: 'Dawson Ash',
-        };
+        return { ...base, status: 'error' as const, errorMsg: 'Unsupported format — try MP3, WAV, M4A, FLAC, or OGG.' };
       }
       if (f.size > MAX_BYTES) {
-        return {
-          id,
-          name: f.name,
-          size: f.size,
-          duration: 0,
-          status: 'error',
-          progress: 0,
-          errorMsg: 'File too large — 500MB max.',
-          uploader: 'Dawson Ash',
-        };
+        return { ...base, status: 'error' as const, errorMsg: 'File too large — 500MB max.' };
       }
-      return {
-        id,
-        name: f.name,
-        size: f.size,
-        duration: estimateDuration(f.size),
-        status: 'selected',
-        progress: 0,
-        errorMsg: null,
-        uploader: 'Dawson Ash',
-      };
+      pendingFilesRef.current.set(id, f);
+      return { ...base, status: 'selected' as const, errorMsg: null };
     });
     setFiles((prev) => [...prev, ...additions]);
     touchActivity();
   }
 
-  // Moves every staged ("selected") file into the shared cloud queue and starts
-  // its upload. From there the queue engine drives it through processing and
-  // completion automatically — no one has to click "start", so a shared instance
-  // never stalls waiting on a single user. Advances to the Process step to watch.
   function addSelectedToQueue() {
-    const ready = filesRef.current.filter((f) => f.status === 'selected' && !f.external);
+    const ready = filesRef.current.filter((f) => f.status === 'selected');
     if (!ready.length) return;
-    setTranscriptionStarted(true);
     setFiles((prev) =>
-      prev.map((f) => (f.status === 'selected' ? { ...f, status: 'uploading' as FileStatus, progress: 0 } : f)),
+      prev.map((f) => (f.status === 'selected' ? { ...f, status: 'uploading' as const, progress: 0 } : f)),
     );
-    ready.forEach((f) => runUploadProgress(f.id));
     setStep(2);
     touchActivity();
+    ready.forEach(uploadOne);
   }
 
-  // Advances a file's upload phase. The updater stays pure (the random step is
-  // drawn outside it) and the interval retires itself once the file leaves the
-  // 'uploading' state; queued files are picked up by the queue engine effect.
-  function driveUpload(fileId: string, base: number, jitter: number, tickMs: number) {
-    const interval = setInterval(() => {
-      const current = filesRef.current.find((f) => f.id === fileId);
-      if (!current || current.status !== 'uploading') {
-        clearTrackedInterval(interval);
-        return;
-      }
-      const delta = base + Math.random() * jitter;
+  async function uploadOne(row: TranscriptFile) {
+    const blob = pendingFilesRef.current.get(row.id);
+    if (!blob) return;
+    try {
+      const job = await createJob(blob, {
+        onProgress: (percent) =>
+          setFiles((prev) => prev.map((f) => (f.id === row.id ? { ...f, progress: percent } : f))),
+      });
+      setSessionJobIds((prev) => (prev.includes(job.jobId) ? prev : [...prev, job.jobId]));
+      setFiles((prev) => prev.map((f) => (f.id === row.id ? { ...mapJob(job), id: f.id } : f)));
+    } catch (err) {
+      // The file never reached the server, so it drops back to the staging list
+      // where a rejected-on-validation file sits: progress 0, no job id.
       setFiles((prev) =>
-        prev.map((f) => {
-          if (f.id !== fileId || f.status !== 'uploading') return f;
-          const nextProgress = f.progress + delta;
-          if (nextProgress >= 100) return { ...f, status: 'queued' as FileStatus, progress: 100 };
-          return { ...f, progress: nextProgress };
-        }),
+        prev.map((f) =>
+          f.id === row.id ? { ...f, status: 'error' as const, progress: 0, errorMsg: errorMessage(err) } : f,
+        ),
       );
-    }, tickMs);
-    trackInterval(interval);
-  }
-
-  function runUploadProgress(fileId: string) {
-    driveUpload(fileId, 14, 20, 660);
-  }
-
-  // Drives an external (another user's) job through its upload phase; once uploaded
-  // it joins the shared cloud queue and waits its turn like everything else.
-  function runSeedJob(fileId: string) {
-    driveUpload(fileId, 6, 9, 900);
+    } finally {
+      pendingFilesRef.current.delete(row.id);
+    }
   }
 
   function onFileInputChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -315,67 +238,36 @@ export default function App() {
     fileInputRef.current?.click();
   }
 
-  // Advances the processing phase. Like driveUpload, the updater is pure and the
-  // interval retires itself once the file finishes; the completion effect takes
-  // care of history entries and clearing external jobs from the shared queue.
-  function runProgress(fileId: string) {
-    const interval = setInterval(() => {
-      const current = filesRef.current.find((f) => f.id === fileId);
-      if (!current || current.status !== 'processing') {
-        clearTrackedInterval(interval);
-        return;
-      }
-      const delta = 8 + Math.random() * 14;
-      setFiles((prev) =>
-        prev.map((f) => {
-          if (f.id !== fileId || f.status !== 'processing') return f;
-          const nextProgress = f.progress + delta;
-          if (nextProgress < 100) return { ...f, progress: nextProgress };
-          const failed = !f.external && f.name.toLowerCase().includes('fail');
-          return failed
-            ? {
-                ...f,
-                status: 'error' as FileStatus,
-                progress: 100,
-                errorMsg: "We couldn't transcribe this file. It may be corrupted or unreadable.",
-              }
-            : {
-                ...f,
-                status: 'done' as FileStatus,
-                progress: 100,
-                segments: genSegments(false),
-              };
-        }),
-      );
-    }, 1050);
-    trackInterval(interval);
+  async function retryFile(fileId: string) {
+    const row = filesRef.current.find((f) => f.id === fileId);
+    if (!row?.jobId) return;
+    try {
+      const job = await retryJob(row.jobId);
+      setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...mapJob(job), id: f.id } : f)));
+      setActionError(null);
+    } catch (err) {
+      setActionError(errorMessage(err));
+    }
   }
 
-  function addHistoryEntry(file: TranscriptFile) {
-    const entry: TranscriptFile = {
-      id: nextId('h'),
-      name: file.name,
-      size: file.size,
-      duration: file.duration,
-      status: file.status,
-      progress: file.progress,
-      errorMsg: file.errorMsg,
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      segments: file.segments,
-    };
-    setHistory((prev) => [entry, ...prev]);
-  }
-
-  function retryFile(fileId: string) {
-    // A retried file gets a fresh completion (and, if it succeeds, a fresh history entry).
-    completionHandledRef.current.delete(fileId);
-    setFiles((prev) =>
-      prev.map((f) => (f.id === fileId ? { ...f, status: 'queued' as FileStatus, progress: 0, errorMsg: null } : f)),
-    );
-  }
-
-  function removeFile(fileId: string) {
-    setFiles((prev) => prev.filter((f) => f.id !== fileId));
+  // A running job can't be deleted — the API answers 409 — so the row stays put
+  // and the reason is shown instead of the row silently refusing to disappear.
+  async function removeFile(fileId: string) {
+    const row = filesRef.current.find((f) => f.id === fileId);
+    if (!row) return;
+    if (!row.jobId) {
+      pendingFilesRef.current.delete(fileId);
+      setFiles((prev) => prev.filter((f) => f.id !== fileId));
+      return;
+    }
+    try {
+      await deleteJob(row.jobId);
+      setFiles((prev) => prev.filter((f) => f.id !== fileId));
+      setSessionJobIds((prev) => prev.filter((id) => id !== row.jobId));
+      setActionError(null);
+    } catch (err) {
+      setActionError(errorMessage(err));
+    }
   }
 
   function selectFile(fileId: string, source: FileSource) {
@@ -400,37 +292,78 @@ export default function App() {
     setSelectedSource(null);
   }
 
-  function updateSegmentText(source: FileSource, fileId: string, idx: number, text: string) {
-    const updater = (list: TranscriptFile[]) =>
-      list.map((f) => {
-        if (f.id !== fileId || !f.segments) return f;
-        const segments = f.segments.map((seg, i) => (i === idx ? { ...seg, text } : seg));
-        return { ...f, segments };
-      });
-    if (source === 'history') setHistory(updater);
-    else setFiles(updater);
+  function updateSegmentText(jobId: string, idx: number, text: string) {
+    setTranscripts((prev) => {
+      const segments = prev[jobId];
+      if (!segments) return prev;
+      return { ...prev, [jobId]: segments.map((seg, i) => (i === idx ? { ...seg, text } : seg)) };
+    });
   }
 
-  function getSelectedFile(): TranscriptFile | null {
+  const sessionIds = useMemo(() => new Set(sessionJobIds), [sessionJobIds]);
+  const isSessionFile = (f: TranscriptFile) => (f.jobId ? sessionIds.has(f.jobId) : f.status === 'uploading');
+
+  // Picked but not yet sent, including the two client-side rejections.
+  const stagedFiles = files.filter((f) => !f.jobId && f.status !== 'uploading');
+  const sessionFiles = files.filter(isSessionFile);
+  // The shared queue: everything in flight anywhere on the server, plus this
+  // session's failures so they can be retried where they failed.
+  const queueFiles = files.filter(
+    (f) =>
+      f.status === 'uploading' ||
+      f.status === 'queued' ||
+      f.status === 'processing' ||
+      (f.status === 'error' && !!f.jobId && sessionIds.has(f.jobId)),
+  );
+  const history = useMemo(
+    () => jobs.filter((j) => j.status === 'DONE' || j.status === 'ERROR').map(mapJob),
+    [jobs],
+  );
+
+  function findSelected(): TranscriptFile | null {
     if (!selectedFileId) return null;
     const list = selectedSource === 'history' ? history : files;
-    return list.find((f) => f.id === selectedFileId) ?? null;
+    const found = list.find((f) => f.id === selectedFileId);
+    if (!found) return null;
+    return { ...found, segments: found.jobId ? transcripts[found.jobId] ?? null : null };
   }
+
+  const selected = findSelected();
+  const selectedJobId = selected?.jobId ?? null;
+  const selectedIsDone = selected?.status === 'done';
+  const transcriptPending = selectedIsDone && !!selectedJobId && !transcripts[selectedJobId];
+
+  // Segments don't ride along on the job object, so the editor fetches them on
+  // open. The guard means re-opening a transcript never overwrites local edits.
+  useEffect(() => {
+    if (!selectedJobId || !selectedIsDone || transcripts[selectedJobId]) return;
+    let cancelled = false;
+    getTranscript(selectedJobId)
+      .then((t) => {
+        if (!cancelled) setTranscripts((prev) => ({ ...prev, [selectedJobId]: t.segments }));
+      })
+      .catch((err) => {
+        if (!cancelled) setActionError(errorMessage(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedJobId, selectedIsDone, transcripts]);
 
   function download(format: 'txt' | 'srt' | 'json') {
-    const file = getSelectedFile();
-    if (!file || !file.segments) return;
-    const base = file.name.replace(/\.[^.]+$/, '');
-    if (format === 'txt') triggerDownload(base + '.txt', buildTxt(file), 'text/plain');
-    if (format === 'srt') triggerDownload(base + '.srt', buildSrt(file), 'text/plain');
-    if (format === 'json') triggerDownload(base + '.json', buildJson(file), 'application/json');
+    if (!selected?.segments) return;
+    const base = selected.name.replace(/\.[^.]+$/, '');
+    if (format === 'txt') triggerDownload(base + '.txt', buildTxt(selected), 'text/plain');
+    if (format === 'srt') triggerDownload(base + '.srt', buildSrt(selected), 'text/plain');
+    if (format === 'json') triggerDownload(base + '.json', buildJson(selected), 'application/json');
   }
 
-  const queueAnnouncement = useQueueAnnouncements(files);
+  // Only this session's files are announced; narrating strangers' jobs as they
+  // move through the shared queue would make the live region unusable.
+  const queueAnnouncement = useQueueAnnouncements(sessionFiles);
 
-  const isConnected = session === 'connected';
   const connecting = session === 'connecting';
-  const selected = getSelectedFile();
+  const alert = actionError ?? pollError;
   const showConnectGate = !isConnected;
   const showFlowScreen = isConnected && nav === 'new' && !selected;
   const showHistoryScreen = isConnected && nav === 'history' && !selected;
@@ -446,6 +379,12 @@ export default function App() {
       <Header isConnected={isConnected} nav={nav} onToggleHistory={() => setNav(nav === 'history' ? 'new' : 'history')} />
 
       <main id="main" className="app-main" tabIndex={-1}>
+        {isConnected && alert && (
+          <div className="app-alert" role="alert">
+            {alert}
+          </div>
+        )}
+
         {showConnectGate && (
           <ConnectGate connecting={connecting} connectError={connectError} onStart={startSession} />
         )}
@@ -455,11 +394,11 @@ export default function App() {
         {selected && (
           <TranscriptEditor
             file={selected}
-            source={selectedSource!}
             playhead={playhead}
+            transcriptPending={transcriptPending}
             onBack={backFromEditor}
             onScrub={scrubTo}
-            onSegmentEdit={(idx, text) => updateSegmentText(selectedSource!, selected.id, idx, text)}
+            onSegmentEdit={(idx, text) => selected.jobId && updateSegmentText(selected.jobId, idx, text)}
             onDownload={download}
           />
         )}
@@ -468,7 +407,9 @@ export default function App() {
           <FlowScreen
             step={step}
             onStepClick={setStep}
-            files={files}
+            stagedFiles={stagedFiles}
+            queueFiles={queueFiles}
+            sessionFiles={sessionFiles}
             fileInputRef={fileInputRef}
             onDragOver={onDragOver}
             onDrop={onDrop}
@@ -487,7 +428,7 @@ export default function App() {
       </main>
 
       {isConnected && (
-        <SessionBar session={session} instance={instance} idleSecondsRemaining={idleSecondsRemaining} onEndSession={endSession} />
+        <SessionBar session={session} idleSecondsRemaining={idleSecondsRemaining} onEndSession={endSession} />
       )}
 
       {idleWarn && <IdleModal idleSecondsLeft={idleSecondsLeft} onEndNow={endSession} onKeepWorking={keepWorking} />}

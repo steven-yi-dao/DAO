@@ -9,7 +9,10 @@ import './UploadStep.css';
 
 interface UploadStepProps {
   headingRef: RefObject<HTMLHeadingElement | null>;
-  files: TranscriptFile[];
+  /** Picked in this browser, not sent yet — including the two client-side
+   *  rejections, which never made it out and stay here to be removed. */
+  stagedFiles: TranscriptFile[];
+  queueFiles: TranscriptFile[];
   fileInputRef: RefObject<HTMLInputElement | null>;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
@@ -22,7 +25,8 @@ interface UploadStepProps {
 
 export function UploadStep({
   headingRef,
-  files,
+  stagedFiles,
+  queueFiles,
   fileInputRef,
   onDragOver,
   onDrop,
@@ -33,13 +37,7 @@ export function UploadStep({
   onBackToTools,
 }: UploadStepProps) {
   const [confirmBack, setConfirmBack] = useState(false);
-  // Picked files are staged here first; they only join the shared cloud queue
-  // once "Add files to cloud queue" is pressed. Validation failures (error at
-  // progress 0) never made it in, so they stay in the staging list too.
-  const isStaged = (f: TranscriptFile) => !f.external && (f.status === 'selected' || (f.status === 'error' && f.progress === 0));
-  const stagedFiles = files.filter(isStaged);
-  const queueFiles = files.filter((f) => !isStaged(f));
-  const readyCount = files.filter((f) => f.status === 'selected' && !f.external).length;
+  const readyCount = stagedFiles.filter((f) => f.status === 'selected').length;
   const addDisabled = readyCount === 0;
 
   return (
@@ -138,22 +136,17 @@ export function UploadStep({
                         <StatusBadge status="done" />
                       </div>
                     )}
-                    <div className="file-meta">
-                      {formatBytes(file.size)}
-                      {file.uploader && ` · ${file.uploader}`}
-                    </div>
+                    <div className="file-meta">{formatBytes(file.size)}</div>
                   </div>
                   {file.status === 'error' && <div className="upload__error-text">{file.errorMsg}</div>}
-                  {!file.external && (
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Remove ${file.name}`}
-                      onClick={() => onRemoveFile(file.id)}
-                    >
-                      ×
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => onRemoveFile(file.id)}
+                  >
+                    ×
+                  </button>
                 </li>
               ))}
             </ul>

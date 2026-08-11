@@ -235,3 +235,9 @@
   color: var(--color-danger);
   font-weight: 700;
 }
+
+.editor__pending {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 14px 0;
+}

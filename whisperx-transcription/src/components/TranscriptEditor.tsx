@@ -1,11 +1,12 @@
-import type { FileSource, TranscriptFile } from '../types';
+import type { TranscriptFile } from '../types';
 import { formatBytes, formatClock, formatDuration } from '../lib/utils';
 import './TranscriptEditor.css';
 
 interface TranscriptEditorProps {
   file: TranscriptFile;
-  source: FileSource;
   playhead: number;
+  /** The transcript lives in a separate file on the server and is fetched on open. */
+  transcriptPending: boolean;
   onBack: () => void;
   onScrub: (seconds: number) => void;
   onSegmentEdit: (idx: number, text: string) => void;
@@ -18,7 +19,15 @@ const DOWNLOAD_FORMATS: { format: 'txt' | 'srt' | 'json'; label: string; desc: s
   { format: 'json', label: 'JSON', desc: 'JSON' },
 ];
 
-export function TranscriptEditor({ file, playhead, onBack, onScrub, onSegmentEdit, onDownload }: TranscriptEditorProps) {
+export function TranscriptEditor({
+  file,
+  playhead,
+  transcriptPending,
+  onBack,
+  onScrub,
+  onSegmentEdit,
+  onDownload,
+}: TranscriptEditorProps) {
   const playheadPercent = file.duration ? Math.min(100, (playhead / file.duration) * 100) : 0;
 
   return (
@@ -75,6 +84,12 @@ export function TranscriptEditor({ file, playhead, onBack, onScrub, onSegmentEdi
             </div>
           </div>
         </>
+      )}
+
+      {transcriptPending && (
+        <p className="editor__pending" role="status">
+          Loading transcript…
+        </p>
       )}
 
       {file.status === 'error' && (

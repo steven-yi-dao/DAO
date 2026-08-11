@@ -1,11 +1,25 @@
 # Project guidance
 
-Two halves, deliberately decoupled right now:
+Two halves:
 
-- **`src/`** — Vite + React 19 SPA. Still driven entirely by client-side mocks;
-  nothing here calls the backend yet. See `.claude/skills/verify/SKILL.md`.
+- **`src/`** — Vite + React 19 SPA. Talks to the backend through
+  `src/lib/api.ts`. See `.claude/skills/verify/SKILL.md`.
 - **`backend/`** — FastAPI + SQLite + WhisperX, run as three containers on one
   EC2 GPU instance. See `backend/README.md` and `BACKEND_PLAN.md`.
+
+## Working on the frontend
+
+- All network access goes through `src/lib/api.ts`. `ApiJob` mirrors the
+  backend's `db.to_api` field for field, and the contract test asserts that —
+  change one and you must change the other.
+- Job state arrives by polling `GET /api/jobs`; there is no push channel and no
+  per-job progress. Upload percentage is real (XHR); transcription progress does
+  not exist, so its bar is indeterminate. Don't invent a number for it.
+- The backend has no auth and no owner column. Jobs are anonymous; a job's
+  membership in the current flow is tracked client-side only.
+- Two suites: `npm test` (client unit tests, stubbed transport) and
+  `npm run test:contract` (real client against a real uvicorn — this is the one
+  that catches contract drift).
 
 ## Architecture
 
