@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import type { RefObject } from 'react';
-import type { TranscriptFile, TranscriptionSettings } from '../types';
+import type { TranscriptFile } from '../types';
 import { formatBytes } from '../lib/utils';
-import { LANGUAGE_LABELS, MODEL_LABELS } from '../lib/statusMeta';
 import { StatusBadge } from './StatusBadge';
 import { WaveIcon } from './WaveIcon';
 import { ModalDialog } from './ModalDialog';
@@ -10,12 +9,11 @@ import './UploadStep.css';
 
 interface UploadStepProps {
   headingRef: RefObject<HTMLHeadingElement | null>;
-  files: TranscriptFile[];
-  settingsOpen: boolean;
-  settings: TranscriptionSettings;
+  /** Picked in this browser, not sent yet — including the two client-side
+   *  rejections, which never made it out and stay here to be removed. */
+  stagedFiles: TranscriptFile[];
+  queueFiles: TranscriptFile[];
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onToggleSettings: () => void;
-  onUpdateSetting: <K extends keyof TranscriptionSettings>(key: K, value: TranscriptionSettings[K]) => void;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onOpenPicker: () => void;
@@ -27,12 +25,9 @@ interface UploadStepProps {
 
 export function UploadStep({
   headingRef,
-  files,
-  settingsOpen,
-  settings,
+  stagedFiles,
+  queueFiles,
   fileInputRef,
-  onToggleSettings,
-  onUpdateSetting,
   onDragOver,
   onDrop,
   onOpenPicker,
@@ -42,13 +37,7 @@ export function UploadStep({
   onBackToTools,
 }: UploadStepProps) {
   const [confirmBack, setConfirmBack] = useState(false);
-  // Picked files are staged here first; they only join the shared cloud queue
-  // once "Add files to cloud queue" is pressed. Validation failures (error at
-  // progress 0) never made it in, so they stay in the staging list too.
-  const isStaged = (f: TranscriptFile) => !f.external && (f.status === 'selected' || (f.status === 'error' && f.progress === 0));
-  const stagedFiles = files.filter(isStaged);
-  const queueFiles = files.filter((f) => !isStaged(f));
-  const readyCount = files.filter((f) => f.status === 'selected' && !f.external).length;
+  const readyCount = stagedFiles.filter((f) => f.status === 'selected').length;
   const addDisabled = readyCount === 0;
 
   return (
@@ -83,63 +72,6 @@ export function UploadStep({
           hidden
           onChange={onFileInputChange}
         />
-      </div>
-
-      <div className="upload-settings">
-        <button
-          type="button"
-          className="upload-settings__toggle"
-          onClick={onToggleSettings}
-          aria-expanded={settingsOpen}
-          aria-controls="upload-settings-panel"
-        >
-          Transcription settings <span aria-hidden="true">{settingsOpen ? '▴' : '▾'}</span>
-        </button>
-        {settingsOpen && (
-          <div id="upload-settings-panel" className="settings-panel">
-            <label className="settings-field">
-              Language
-              <select
-                className="settings-select"
-                value={settings.language}
-                onChange={(e) => onUpdateSetting('language', e.target.value)}
-              >
-                {Object.entries(LANGUAGE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-field">
-              Model
-              <select
-                className="settings-select"
-                value={settings.model}
-                onChange={(e) => onUpdateSetting('model', e.target.value)}
-              >
-                {Object.entries(MODEL_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="settings-field">
-              <span id="diarization-label">Label speakers (beta)</span>
-              <button
-                type="button"
-                className="switch"
-                role="switch"
-                aria-checked={settings.diarization}
-                aria-labelledby="diarization-label"
-                onClick={() => onUpdateSetting('diarization', !settings.diarization)}
-              >
-                <span className="switch__thumb" />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {stagedFiles.length > 0 && (
@@ -204,22 +136,17 @@ export function UploadStep({
                         <StatusBadge status="done" />
                       </div>
                     )}
-                    <div className="file-meta">
-                      {formatBytes(file.size)}
-                      {file.uploader && ` · ${file.uploader}`}
-                    </div>
+                    <div className="file-meta">{formatBytes(file.size)}</div>
                   </div>
                   {file.status === 'error' && <div className="upload__error-text">{file.errorMsg}</div>}
-                  {!file.external && (
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label={`Remove ${file.name}`}
-                      onClick={() => onRemoveFile(file.id)}
-                    >
-                      ×
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() => onRemoveFile(file.id)}
+                  >
+                    ×
+                  </button>
                 </li>
               ))}
             </ul>

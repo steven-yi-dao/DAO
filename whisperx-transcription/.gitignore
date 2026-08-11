@@ -24,7 +24,14 @@ dist-ssr
 *.sln
 *.sw?
 
-# Backend (Python / SAM)
+# Backend (Python)
 __pycache__/
 *.pyc
-.aws-sam/
+backend/.env
+backend/data/
+backend/.venv/
+backend/.venv-worker/
+
+# Scratch /data for local dev and the contract test
+backend/.devdata/
+backend/.contract-data/

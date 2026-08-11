@@ -7,24 +7,26 @@ import './ProcessStep.css';
 
 interface ProcessStepProps {
   headingRef: RefObject<HTMLHeadingElement | null>;
-  files: TranscriptFile[];
+  /** Everything in flight on the shared server, plus this session's failures. */
+  queueFiles: TranscriptFile[];
+  /** This session's uploads, which are what the flow waits on. */
+  sessionFiles: TranscriptFile[];
   onRetryFile: (id: string) => void;
   onBackToUpload: () => void;
   onContinueToReview: () => void;
 }
 
-export function ProcessStep({ headingRef, files, onRetryFile, onBackToUpload, onContinueToReview }: ProcessStepProps) {
-  // Every file stays in the shared cloud queue while it uploads or processes.
-  // Once one of the current user's own files finishes, it is lifted out of the
-  // queue and promoted to the "Completed" list above. Other users' (external)
-  // files remain in the queue regardless of their status.
-  const isFinished = (f: TranscriptFile) => !f.external && f.status === 'done';
-  const finishedFiles = files.filter(isFinished);
-  const queueFiles = files.filter((f) => !isFinished(f));
-
-  const ownFiles = files.filter((f) => !f.external);
-  const allTerminal = ownFiles.length > 0 && ownFiles.every((f) => f.status === 'done' || f.status === 'error');
-  const continueDisabled = !allTerminal;
+export function ProcessStep({
+  headingRef,
+  queueFiles,
+  sessionFiles,
+  onRetryFile,
+  onBackToUpload,
+  onContinueToReview,
+}: ProcessStepProps) {
+  const finishedFiles = sessionFiles.filter((f) => f.status === 'done');
+  const allTerminal =
+    sessionFiles.length > 0 && sessionFiles.every((f) => f.status === 'done' || f.status === 'error');
 
   return (
     <div>
@@ -40,10 +42,7 @@ export function ProcessStep({ headingRef, files, onRetryFile, onBackToUpload, on
               <li key={file.id} className="process__done-row">
                 <div className="process__row-main">
                   <div className="file-name">{file.name}</div>
-                  <div className="file-meta">
-                    {formatBytes(file.size)}
-                    {file.uploader && ` · ${file.uploader}`}
-                  </div>
+                  <div className="file-meta">{formatBytes(file.size)}</div>
                 </div>
                 <StatusBadge status="done" />
               </li>
@@ -64,6 +63,7 @@ export function ProcessStep({ headingRef, files, onRetryFile, onBackToUpload, on
           {queueFiles.length > 0 ? (
             <ul className="process__queue-list">
               {queueFiles.map((file, i) => {
+                const uploading = file.status === 'uploading';
                 const processing = file.status === 'processing';
                 return (
                   <li key={file.id} className="process__queue-row">
@@ -73,14 +73,10 @@ export function ProcessStep({ headingRef, files, onRetryFile, onBackToUpload, on
                       </div>
                       <div className="process__row-main">
                         <div className="file-name">{file.name}</div>
-                        <div className="file-meta">
-                          {formatBytes(file.size)}
-                          {file.uploader && ` · ${file.uploader}`}
-                        </div>
+                        <div className="file-meta">{formatBytes(file.size)}</div>
                       </div>
-                      {file.status === 'uploading' && <StatusBadge status="uploading" />}
+                      {uploading && <StatusBadge status="uploading" />}
                       {processing && <StatusBadge status="processing" />}
-                      {file.status === 'done' && <StatusBadge status="done" />}
                       {file.status === 'queued' && <StatusBadge status="queued" label="In queue" />}
                       {file.status === 'error' && (
                         <button type="button" className="process__retry" onClick={() => onRetryFile(file.id)}>
@@ -88,16 +84,28 @@ export function ProcessStep({ headingRef, files, onRetryFile, onBackToUpload, on
                         </button>
                       )}
                     </div>
-                    {processing && (
+                    {/* Upload percentage is measured. Transcription reports only
+                        a status, so its bar is indeterminate rather than a
+                        number the screen reader would repeat as if it were real. */}
+                    {uploading && (
                       <div
                         className="progress-bar"
                         role="progressbar"
-                        aria-label={`Transcribing ${file.name}`}
+                        aria-label={`Uploading ${file.name}`}
                         aria-valuenow={Math.round(file.progress)}
                         aria-valuemin={0}
                         aria-valuemax={100}
                       >
                         <div className="progress-bar__fill" style={{ width: `${Math.round(file.progress)}%` }} />
+                      </div>
+                    )}
+                    {processing && (
+                      <div
+                        className="progress-bar progress-bar--indeterminate"
+                        role="progressbar"
+                        aria-label={`Transcribing ${file.name}`}
+                      >
+                        <div className="progress-bar__fill" />
                       </div>
                     )}
                     {/* Failures are spoken by the queue announcer, with the file name attached. */}
@@ -113,16 +121,14 @@ export function ProcessStep({ headingRef, files, onRetryFile, onBackToUpload, on
       </div>
 
       <p className="process__finished" role="status" aria-live="polite">
-        {allTerminal && queueFiles.length === 0
-          ? 'All files finished — transcripts saved to history. Continue when ready.'
-          : ''}
+        {allTerminal ? 'All files finished — transcripts saved to history. Continue when ready.' : ''}
       </p>
 
       <div className="step-actions">
         <button type="button" className="link-btn" onClick={onBackToUpload}>
           ← Back to upload
         </button>
-        <button type="button" className="btn-primary" disabled={continueDisabled} onClick={onContinueToReview}>
+        <button type="button" className="btn-primary" disabled={!allTerminal} onClick={onContinueToReview}>
           Continue to review
         </button>
       </div>

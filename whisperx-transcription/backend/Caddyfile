@@ -1,0 +1,26 @@
+{$DOMAIN} {
+	encode gzip
+
+	# Must exceed the API's MAX_UPLOAD_BYTES, or Caddy rejects the upload before
+	# FastAPI can return its own "File too large" message.
+	request_body {
+		max_size 512MB
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000 {
+			# A 500 MB upload over a slow link can take a while; don't cut it off.
+			transport http {
+				read_timeout 30m
+				write_timeout 30m
+			}
+		}
+	}
+
+	# SPA fallback: unknown paths render index.html so client routing works.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

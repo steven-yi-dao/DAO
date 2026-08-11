@@ -18,17 +18,3 @@ const STATUS_META: Record<FileStatus, StatusMeta> = {
 export function getStatusMeta(status: FileStatus): StatusMeta {
   return STATUS_META[status];
 }
-
-export const LANGUAGE_LABELS: Record<string, string> = {
-  'en-US': 'English (US)',
-  'en-GB': 'English (UK)',
-  es: 'Spanish',
-  fr: 'French',
-  auto: 'Auto-detect',
-};
-
-export const MODEL_LABELS: Record<string, string> = {
-  fast: 'Fast',
-  balanced: 'Balanced',
-  accurate: 'Most accurate',
-};

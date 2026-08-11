@@ -1,39 +1,38 @@
-/** Typed client for the WhisperX backend (see backend/template.yaml).
- *
- *  Nothing here touches React state — App.tsx still drives its mocks. Phase 5
- *  swaps the mock drivers for these calls.
+import type { FileStatus, Segment, TranscriptFile } from '../types';
+
+/**
+ * Client for the FastAPI service in `backend/`. Every route lives under /api;
+ * Caddy proxies it same-origin in production, so the relative default is right
+ * and no CORS is involved.
  */
+const BASE = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '');
 
-import type { FileStatus, Segment, TranscriptionSettings } from '../types';
-import { idToken } from './auth';
-import { backendConfig } from './config';
+export type ApiStatus = 'QUEUED' | 'RUNNING' | 'DONE' | 'ERROR';
 
-export type JobStatus = 'CREATED' | 'UPLOADED' | 'QUEUED' | 'PROCESSING' | 'DONE' | 'ERROR';
-
-export interface Job {
+/** Mirrors `db.to_api` in the backend, field for field. */
+export interface ApiJob {
   jobId: string;
   fileName: string;
   sizeBytes: number;
   durationSec: number | null;
-  model: string;
-  language: string;
-  diarize: boolean;
-  status: JobStatus;
+  status: ApiStatus;
+  attempt: number;
+  language: string | null;
   segmentCount: number | null;
   errorMsg: string | null;
+  audioDeleted: boolean;
   createdAt: string;
   updatedAt: string;
-  transcriptUrl?: string;
-  logUrl?: string;
 }
 
-export interface Transcript {
+export interface ApiTranscript {
   jobId: string;
-  language: string;
+  language: string | null;
   segments: Segment[];
 }
 
 export class ApiError extends Error {
+  /** HTTP status, or 0 when the request never got a response. */
   readonly status: number;
 
   constructor(status: number, message: string) {
@@ -43,127 +42,165 @@ export class ApiError extends Error {
   }
 }
 
-/** Backend status → the UI's FileStatus. Both CREATED and UPLOADED read as
- *  'uploading' because from the user's side the file isn't in the queue until
- *  submit succeeds. */
-const STATUS_MAP: Record<JobStatus, FileStatus> = {
-  CREATED: 'uploading',
-  UPLOADED: 'uploading',
+export const NETWORK_MESSAGE = "Couldn't reach the transcription server. This is usually temporary.";
+const GENERIC_MESSAGE = 'The transcription server returned an unexpected response.';
+
+/**
+ * The API normalises FastAPI's `detail` into `{"message": "..."}`, but a
+ * failure upstream of it — Caddy rejecting an oversize body, a proxy 502 —
+ * arrives as plain text or HTML, so parsing has to be allowed to fail.
+ */
+function messageFrom(body: string): string {
+  try {
+    const parsed = JSON.parse(body);
+    if (parsed && typeof parsed.message === 'string') return parsed.message;
+  } catch {
+    /* not JSON */
+  }
+  return GENERIC_MESSAGE;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, init);
+  } catch {
+    throw new ApiError(0, NETWORK_MESSAGE);
+  }
+  if (!res.ok) throw new ApiError(res.status, messageFrom(await res.text()));
+  if (res.status === 204) return undefined as T;
+  return JSON.parse(await res.text()) as T;
+}
+
+export function health(): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>('/health');
+}
+
+export async function listJobs(limit = 200): Promise<ApiJob[]> {
+  const body = await request<{ jobs: ApiJob[] }>(`/jobs?limit=${limit}`);
+  return body.jobs;
+}
+
+export function getJob(jobId: string): Promise<ApiJob> {
+  return request<ApiJob>(`/jobs/${encodeURIComponent(jobId)}`);
+}
+
+/** 409 until the job is DONE — distinct from the 404 of an unknown job. */
+export function getTranscript(jobId: string): Promise<ApiTranscript> {
+  return request<ApiTranscript>(`/jobs/${encodeURIComponent(jobId)}/transcript`);
+}
+
+export function retryJob(jobId: string): Promise<ApiJob> {
+  return request<ApiJob>(`/jobs/${encodeURIComponent(jobId)}/retry`, { method: 'POST' });
+}
+
+export function deleteJob(jobId: string): Promise<void> {
+  return request<void>(`/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+}
+
+export interface UploadOptions {
+  onProgress?: (percent: number) => void;
+  signal?: AbortSignal;
+}
+
+/**
+ * Uploads one file as multipart with the field name `file`, which is what
+ * `create_job` expects. Uses XMLHttpRequest where it exists because `fetch`
+ * has no upload-progress event; the `fetch` fallback keeps the client usable
+ * from Node, where the contract test runs it.
+ */
+export function createJob(file: File, options: UploadOptions = {}): Promise<ApiJob> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+
+  if (typeof XMLHttpRequest === 'undefined') {
+    return request<ApiJob>('/jobs', { method: 'POST', body: form, signal: options.signal }).then((job) => {
+      options.onProgress?.(100);
+      return job;
+    });
+  }
+  return uploadWithProgress(form, options);
+}
+
+function uploadWithProgress(form: FormData, { onProgress, signal }: UploadOptions): Promise<ApiJob> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ApiError(0, 'Upload cancelled.'));
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', BASE + '/jobs');
+
+    xhr.upload.onprogress = (e) => {
+      if (!onProgress || !e.lengthComputable || !e.total) return;
+      onProgress(Math.min(100, (e.loaded / e.total) * 100));
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        let job: ApiJob;
+        try {
+          job = JSON.parse(xhr.responseText) as ApiJob;
+        } catch {
+          reject(new ApiError(xhr.status, GENERIC_MESSAGE));
+          return;
+        }
+        onProgress?.(100);
+        resolve(job);
+        return;
+      }
+      reject(new ApiError(xhr.status, messageFrom(xhr.responseText)));
+    };
+
+    xhr.onerror = () => reject(new ApiError(0, NETWORK_MESSAGE));
+    xhr.ontimeout = () => reject(new ApiError(0, NETWORK_MESSAGE));
+    xhr.onabort = () => reject(new ApiError(0, 'Upload cancelled.'));
+
+    signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+    xhr.send(form);
+  });
+}
+
+const STATUS_MAP: Record<ApiStatus, FileStatus> = {
   QUEUED: 'queued',
-  PROCESSING: 'processing',
+  RUNNING: 'processing',
   DONE: 'done',
   ERROR: 'error',
 };
 
-export function toFileStatus(status: JobStatus): FileStatus {
-  return STATUS_MAP[status] ?? 'error';
+/**
+ * An unrecognised status means this client is older than the server. Treating
+ * it as still in flight stalls the flow honestly, where claiming `done` or
+ * `error` would assert an outcome we don't know.
+ */
+export function toFileStatus(status: string): FileStatus {
+  return STATUS_MAP[status as ApiStatus] ?? 'processing';
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = await idToken();
-  if (!token) throw new ApiError(401, 'Your session expired — please sign in again.');
-
-  const res = await fetch(`${backendConfig().apiUrl}${path}`, {
-    ...init,
-    headers: {
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
-      ...init.headers,
-      authorization: token,
-    },
-  });
-
-  if (!res.ok) {
-    const message = await res
-      .json()
-      .then((b: { message?: string }) => b.message)
-      .catch(() => null);
-    throw new ApiError(res.status, message ?? `Request failed (${res.status})`);
-  }
-  return res.json() as Promise<T>;
+export function formatJobDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-interface CreateJobResponse {
-  jobId: string;
-  uploadUrl: string;
-  expiresIn: number;
+/** Server job to the shape the UI renders. Segments are fetched separately. */
+export function mapJob(job: ApiJob): TranscriptFile {
+  return {
+    id: job.jobId,
+    jobId: job.jobId,
+    name: job.fileName,
+    size: job.sizeBytes,
+    duration: job.durationSec ?? 0,
+    status: toFileStatus(job.status),
+    progress: 100,
+    errorMsg: job.errorMsg,
+    date: formatJobDate(job.createdAt),
+    segments: null,
+  };
 }
 
-export function createJob(
-  file: File,
-  settings: TranscriptionSettings,
-  durationSec?: number,
-): Promise<CreateJobResponse> {
-  return request<CreateJobResponse>('/jobs', {
-    method: 'POST',
-    body: JSON.stringify({
-      fileName: file.name,
-      sizeBytes: file.size,
-      model: settings.model,
-      language: settings.language,
-      diarize: settings.diarization,
-      durationSec: durationSec ?? null,
-    }),
-  });
-}
-
-/** Presigned PUT straight to S3 — the file never passes through the API.
- *  Uses XHR rather than fetch because only XHR reports upload progress. */
-export function uploadFile(
-  uploadUrl: string,
-  file: File,
-  onProgress?: (percent: number) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('PUT', uploadUrl);
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable) onProgress?.((e.loaded / e.total) * 100);
-    });
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress?.(100);
-        resolve();
-      } else {
-        reject(new ApiError(xhr.status, `Upload failed (${xhr.status})`));
-      }
-    });
-    xhr.addEventListener('error', () => reject(new ApiError(0, 'Upload failed — check your connection.')));
-    xhr.addEventListener('abort', () => reject(new ApiError(0, 'Upload cancelled.')));
-    signal?.addEventListener('abort', () => xhr.abort());
-    xhr.send(file);
-  });
-}
-
-export function submitJob(jobId: string): Promise<{ jobId: string; status: JobStatus }> {
-  return request(`/jobs/${encodeURIComponent(jobId)}/submit`, { method: 'POST' });
-}
-
-export function listJobs(): Promise<Job[]> {
-  return request<{ jobs: Job[] }>('/jobs').then((r) => r.jobs);
-}
-
-export function getJob(jobId: string): Promise<Job> {
-  return request(`/jobs/${encodeURIComponent(jobId)}`);
-}
-
-/** Fetches the transcript body from the presigned URL on a DONE job. The URL is
- *  already authenticated, so this one call deliberately skips the JWT header. */
-export async function fetchTranscript(job: Job): Promise<Transcript> {
-  if (!job.transcriptUrl) throw new ApiError(409, 'Transcript is not ready yet.');
-  const res = await fetch(job.transcriptUrl);
-  if (!res.ok) throw new ApiError(res.status, 'Could not download the transcript.');
-  return res.json() as Promise<Transcript>;
-}
-
-/** Full create → upload → submit sequence for one file. */
-export async function startTranscription(
-  file: File,
-  settings: TranscriptionSettings,
-  opts: { onProgress?: (percent: number) => void; durationSec?: number; signal?: AbortSignal } = {},
-): Promise<string> {
-  const { jobId, uploadUrl } = await createJob(file, settings, opts.durationSec);
-  await uploadFile(uploadUrl, file, opts.onProgress, opts.signal);
-  await submitJob(jobId);
-  return jobId;
+/** Error text fit to show a user, whatever was thrown. */
+export function errorMessage(err: unknown): string {
+  return err instanceof ApiError ? err.message : NETWORK_MESSAGE;
 }

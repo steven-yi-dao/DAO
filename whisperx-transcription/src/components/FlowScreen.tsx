@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import type { FlowStep, TranscriptFile, TranscriptionSettings } from '../types';
+import type { FlowStep, TranscriptFile } from '../types';
 import { StepIndicator } from './StepIndicator';
 import { UploadStep } from './UploadStep';
 import { ProcessStep } from './ProcessStep';
@@ -10,12 +10,13 @@ import './FlowScreen.css';
 interface FlowScreenProps {
   step: FlowStep;
   onStepClick: (step: FlowStep) => void;
-  files: TranscriptFile[];
-  settingsOpen: boolean;
-  settings: TranscriptionSettings;
+  /** Picked in this browser, not sent yet. */
+  stagedFiles: TranscriptFile[];
+  /** The shared server queue, as rendered in the queue card. */
+  queueFiles: TranscriptFile[];
+  /** Uploaded from this browser this session — what the flow is walking through. */
+  sessionFiles: TranscriptFile[];
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onToggleSettings: () => void;
-  onUpdateSetting: <K extends keyof TranscriptionSettings>(key: K, value: TranscriptionSettings[K]) => void;
   onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
   onOpenPicker: () => void;
@@ -33,12 +34,10 @@ interface FlowScreenProps {
 export function FlowScreen({
   step,
   onStepClick,
-  files,
-  settingsOpen,
-  settings,
+  stagedFiles,
+  queueFiles,
+  sessionFiles,
   fileInputRef,
-  onToggleSettings,
-  onUpdateSetting,
   onDragOver,
   onDrop,
   onOpenPicker,
@@ -70,12 +69,9 @@ export function FlowScreen({
         {step === 1 && (
           <UploadStep
             headingRef={headingRef}
-            files={files}
-            settingsOpen={settingsOpen}
-            settings={settings}
+            stagedFiles={stagedFiles}
+            queueFiles={queueFiles}
             fileInputRef={fileInputRef}
-            onToggleSettings={onToggleSettings}
-            onUpdateSetting={onUpdateSetting}
             onDragOver={onDragOver}
             onDrop={onDrop}
             onOpenPicker={onOpenPicker}
@@ -88,14 +84,20 @@ export function FlowScreen({
         {step === 2 && (
           <ProcessStep
             headingRef={headingRef}
-            files={files}
+            queueFiles={queueFiles}
+            sessionFiles={sessionFiles}
             onRetryFile={onRetryFile}
             onBackToUpload={onBackToUpload}
             onContinueToReview={onContinueToReview}
           />
         )}
         {step === 3 && (
-          <ReviewStep headingRef={headingRef} files={files} onViewFile={onViewFile} onBackToProcess={onBackToProcess} />
+          <ReviewStep
+            headingRef={headingRef}
+            files={sessionFiles}
+            onViewFile={onViewFile}
+            onBackToProcess={onBackToProcess}
+          />
         )}
       </div>
     </>

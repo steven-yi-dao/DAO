@@ -36,11 +36,6 @@
   color: var(--color-text);
 }
 
-.session-bar__instance {
-  font: 11.5px var(--font-mono);
-  color: var(--color-text-muted);
-}
-
 .session-bar__idle {
   font-size: 11px;
   color: var(--color-text-muted);

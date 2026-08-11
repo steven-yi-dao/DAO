@@ -35,9 +35,8 @@ export function useQueueAnnouncements(files: TranscriptFile[]): Announcement {
     const messages = files
       .filter((f) => previous.has(f.id) && previous.get(f.id) !== f.status && STATUS_TEXT[f.status])
       .map((f) => {
-        const owner = f.external && f.uploader ? ` from ${f.uploader}` : '';
         const detail = f.status === 'error' && f.errorMsg ? ` ${f.errorMsg}` : '';
-        return `${f.name}${owner}: ${STATUS_TEXT[f.status]}.${detail}`;
+        return `${f.name}: ${STATUS_TEXT[f.status]}.${detail}`;
       });
 
     // Files that change together are announced as one message, not a burst.
