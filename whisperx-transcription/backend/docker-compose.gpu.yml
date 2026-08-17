@@ -1,0 +1,17 @@
+# GPU overlay. Layer it over docker-compose.yml on a host with the NVIDIA
+# driver and nvidia-container-toolkit:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+#
+# Only the worker gets the GPU; the API never loads a model. deploy/user-data.sh
+# adds this file automatically when nvidia-smi reports a device, so the same
+# bootstrap serves a CPU box and a g4dn without editing.
+services:
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

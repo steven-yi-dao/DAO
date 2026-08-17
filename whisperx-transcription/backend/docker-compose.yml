@@ -30,15 +30,11 @@ services:
     volumes:
       - ${DATA_DIR:-/data}:/data
     env_file: .env
-    # Only the worker gets the GPU; the API never loads a model.
-    # Comment this block out to run the whole stack on CPU.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # This file runs on CPU. Only the worker ever uses the GPU, and that
+    # reservation lives in docker-compose.gpu.yml so the base stack starts on a
+    # host with no nvidia runtime:
+    #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+    # app/transcribe.py picks the device itself, so nothing else changes.
 
 volumes:
   caddy_data:
