@@ -286,6 +286,7 @@ npm ci && npm run build             # Caddy serves ../dist
 
 cd backend
 cp .env.example .env                # set DOMAIN to the Route 53 name
+cp /data/caddy.env caddy.env        # basic-auth credential, see Access control
 docker compose up -d --build
 ```
 
@@ -301,6 +302,41 @@ curl -s https://$DOMAIN/api/health
 
 The first start downloads the Whisper medium weights into `/data/models`, which
 takes a few minutes. Subsequent restarts reuse the cache.
+
+## Access control
+
+Caddy puts HTTP basic auth in front of the whole site, SPA and API together. One
+shared credential, no accounts. The browser caches it from the initial page
+challenge and attaches it to the SPA's polling and uploads on its own, so
+nothing in `src/` knows this exists.
+
+This is a door, not authorization. The API still has no owner column, so
+everyone who gets through sees and can delete everyone else's jobs — and since
+source audio is deleted once a transcript is written, a deleted transcript is
+gone. Per-user separation means campus SSO plus an owner column, and neither
+exists yet.
+
+The credential lives at **`/data/caddy.env`** on the encrypted volume, alongside
+the database, so it survives instance replacement. `user-data.sh` copies it to
+`backend/caddy.env` at boot, and `docker-compose.yml` reads it from there. It is
+deliberately not in `.env`: bcrypt hashes contain `$`, and compose interpolates
+the project `.env`, which would corrupt it.
+
+To change the password:
+
+```bash
+docker run --rm caddy:2-alpine caddy hash-password --plaintext 'new-password'
+
+sudo vi /data/caddy.env             # paste the hash into BASIC_AUTH_HASH
+sudo cp /data/caddy.env /opt/whisperx/whisperx-transcription/backend/caddy.env
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d caddy
+```
+
+Two deliberate failure modes. If `caddy.env` is missing the stack refuses to
+start, rather than coming up open. And if `/data/caddy.env` is absent at boot —
+a brand new volume — `user-data.sh` mints a random password and prints it once
+to the bootstrap log (`/var/log/user-data.log`); only the hash is kept, so
+recover it by setting a new one.
 
 ## Operations
 

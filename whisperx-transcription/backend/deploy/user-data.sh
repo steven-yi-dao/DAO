@@ -96,6 +96,28 @@ RETENTION_DAYS=7
 WHISPER_MODEL=medium
 EOF
 
+# The basic-auth credential is durable config, so it lives on /data with the
+# database rather than in git or in this script, and survives the instance being
+# replaced. If the volume is brand new there is nothing to copy, so mint a
+# password rather than start without one: an unauthenticated box is reachable
+# the moment Caddy gets its certificate. The plaintext is printed once, here, and
+# is recoverable afterwards only by setting a new one.
+if [ ! -f /data/caddy.env ]; then
+  GENERATED=$(head -c 18 /dev/urandom | base64 | tr -d '/+=')
+  cat > /data/caddy.env <<EOF
+BASIC_AUTH_USER=dao
+BASIC_AUTH_HASH=$(docker run --rm caddy:2-alpine caddy hash-password --plaintext "$GENERATED")
+EOF
+  chmod 600 /data/caddy.env
+  echo "=============================================================="
+  echo "NO /data/caddy.env FOUND - generated a login"
+  echo "  user: dao"
+  echo "  password: $GENERATED"
+  echo "Record this now; only the hash is stored."
+  echo "=============================================================="
+fi
+cp /data/caddy.env caddy.env
+
 # Layer the GPU reservation on only where there is a GPU, so this same script
 # bootstraps a CPU box and a g4dn unchanged. app/transcribe.py already selects
 # cuda or cpu on its own.
