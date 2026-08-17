@@ -12,11 +12,15 @@ services:
       - caddy_config:/config
     environment:
       DOMAIN: ${DOMAIN:-localhost}
-    # Kept out of .env on purpose: a bcrypt hash contains '$', and compose
-    # interpolates the project .env, which would eat it. env_file values are
-    # passed through literally. A missing file stops the stack from starting,
-    # which is the right failure for the thing holding the front door shut.
-    env_file: caddy.env
+    # Kept out of .env, and read with format: raw, because a bcrypt hash
+    # contains '$' and compose interpolates env files by default — it read the
+    # salt as a variable name and substituted a blank, silently truncating the
+    # hash to something no password could ever match. format: raw turns
+    # interpolation off for this file. A missing file stops the stack from
+    # starting, which is the right failure for the thing holding the door shut.
+    env_file:
+      - path: caddy.env
+        format: raw
 
   api:
     build: .
