@@ -7,6 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/data/models
 
+# Runtime only. No toolchain or FFmpeg headers are needed: requirements.txt
+# pins av to a version that ships a manylinux wheel, so nothing is compiled.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg libsndfile1 \
  && rm -rf /var/lib/apt/lists/*

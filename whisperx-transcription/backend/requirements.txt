@@ -1,8 +1,17 @@
 # whisperx / faster-whisper / ctranslate2 are tightly coupled and are the most
 # common source of breakage — do not bump one without re-testing the set on the
 # exact base image.
-whisperx==3.1.5
+# 3.1.5 force-pins faster-whisper==1.0.1, which in turn pins av==11.*. av 11.0.0
+# is the only 11.x release and ships no wheels, only a source tarball, and it
+# will not compile against the FFmpeg 4.4 headers on this image's Ubuntu 22.04
+# base. 3.1.6 leaves faster-whisper unpinned, which breaks that chain.
+whisperx==3.1.6
+# 1.0.3 asks for av<13,>=11.0 rather than ==11.*, so a wheel can satisfy it.
 faster-whisper==1.0.3
+# The point of the whole exercise: 12.3.0 publishes a cp310 manylinux wheel with
+# FFmpeg bundled, so nothing is compiled. Do not let this float back to 11.x.
+av==12.3.0
+# Held below 4.5 deliberately: 4.5 wants cuDNN 9 and this base image has cuDNN 8.
 ctranslate2==4.4.0
 
 fastapi==0.115.6
@@ -10,4 +19,8 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 
 # torch and torchaudio come from the base image.
-# pyannote.audio is intentionally absent: diarization is not supported.
+#
+# pyannote.audio is not listed here, but whisperx 3.1.5 depends on
+# pyannote.audio==3.1.1 and pip installs it regardless. Diarization stays off
+# because app/transcribe.py never calls it and no Hugging Face token is
+# configured, not because the package is absent.
