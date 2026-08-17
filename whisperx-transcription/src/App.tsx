@@ -5,7 +5,6 @@ import {
   MAX_BYTES,
   IDLE_WARN_MS,
   IDLE_LIMIT_S,
-  IDLE_TOTAL_S,
   buildJson,
   buildSrt,
   buildTxt,
@@ -44,7 +43,6 @@ export default function App() {
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [idleWarn, setIdleWarn] = useState(false);
   const [idleSecondsLeft, setIdleSecondsLeft] = useState(0);
-  const [idleSecondsRemaining, setIdleSecondsRemaining] = useState(IDLE_TOTAL_S);
 
   const [nav, setNavState] = useState<NavTab>('new');
   const [step, setStep] = useState<FlowStep>(1);
@@ -106,7 +104,6 @@ export default function App() {
     const tick = setInterval(() => {
       if (session !== 'connected') return;
       const elapsed = Date.now() - lastActivity;
-      setIdleSecondsRemaining(Math.max(0, IDLE_TOTAL_S - Math.floor(elapsed / 1000)));
       if (elapsed >= IDLE_WARN_MS) {
         const secondsLeft = IDLE_LIMIT_S - Math.floor((elapsed - IDLE_WARN_MS) / 1000);
         if (secondsLeft <= 0) {
@@ -135,7 +132,6 @@ export default function App() {
       setSession('connected');
       setLastActivity(Date.now());
       setIdleWarn(false);
-      setIdleSecondsRemaining(IDLE_TOTAL_S);
       setStep(1);
     } catch (err) {
       setSession('disconnected');
@@ -161,7 +157,6 @@ export default function App() {
   function keepWorking() {
     setLastActivity(Date.now());
     setIdleWarn(false);
-    setIdleSecondsRemaining(IDLE_TOTAL_S);
   }
 
   // Validated client-side first so the user gets an answer without a round trip.
@@ -428,7 +423,7 @@ export default function App() {
       </main>
 
       {isConnected && (
-        <SessionBar session={session} idleSecondsRemaining={idleSecondsRemaining} onEndSession={endSession} />
+        <SessionBar session={session} onEndSession={endSession} />
       )}
 
       {idleWarn && <IdleModal idleSecondsLeft={idleSecondsLeft} onEndNow={endSession} onKeepWorking={keepWorking} />}

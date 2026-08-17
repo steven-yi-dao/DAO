@@ -4,7 +4,6 @@ export const ALLOWED_EXTENSIONS = ['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'a
 export const MAX_BYTES = 500 * 1024 * 1024;
 export const IDLE_WARN_MS = 14 * 60 * 1000;
 export const IDLE_LIMIT_S = 60;
-export const IDLE_TOTAL_S = IDLE_WARN_MS / 1000 + IDLE_LIMIT_S; // 900
 
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';

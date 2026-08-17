@@ -26,21 +26,10 @@
   gap: var(--space-2);
 }
 
-.app-header__user {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
 .app-header__nav {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-}
-
-.app-header__sep {
-  font-size: 13px;
-  color: var(--color-text-muted);
 }
 
 .app-header__nav-btn {
