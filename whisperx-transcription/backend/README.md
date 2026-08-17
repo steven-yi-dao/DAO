@@ -128,15 +128,20 @@ aws service-quotas list-requested-service-quota-change-history-by-quota \
   --query 'RequestedQuotas[0].[Status,DesiredValue]' --output text
 ```
 
-`CASE_CLOSED` with the applied value still `0` is a **denial**, not an
-approval; approval reads `APPROVED`. This account is a member of a CU Boulder
-AWS Organization (management account `058006295414`), and the first request was
-denied within 20 minutes. GPU quota for a member account is governed by the
-organization, so the route is CU central IT rather than a Basic-support case
-opened from inside the member account. SCPs are not the obstacle:
-`run-instances --dry-run` succeeds, which evaluates both IAM and SCPs.
+`CASE_CLOSED` is the terminal state for **both** outcomes. Do not read it as a
+denial, and do not read the applied value straight after the case closes: an
+approval says the new quota "will take effect in 30 minutes", so the value
+still reports the old one for a while. Check the case correspondence for the
+verdict, and re-read the applied value later:
 
-Until that clears, the stack runs on CPU — see [Running without a
+```bash
+aws service-quotas get-service-quota --service-code ec2 \
+  --quota-code L-DB2E81BA --query 'Quota.Value' --output text
+```
+
+This account was approved 19 minutes after filing.
+
+The stack also runs fine without a GPU — see [Running without a
 GPU](#running-without-a-gpu).
 
 1. **Instance** — launch a `g4dn.xlarge` (one NVIDIA T4, 16 GiB GPU memory)
@@ -149,7 +154,10 @@ GPU](#running-without-a-gpu).
      --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id
    ```
 
-   Its snapshot is 75 GiB, so the root volume cannot be smaller than that.
+   Its snapshot is 75 GiB, so the root volume cannot be smaller than that, but
+   **use 150 GiB**. The torch 2.8 base image plus the two built images do not
+   fit in 75 GiB: the first attempt filled the disk to 97% mid-pull and killed
+   the build.
 2. **Data volume** — an encrypted gp3 EBS volume in the *same AZ* as the
    instance, with **DeleteOnTermination = false**. 50 GiB is ample: the only
    real consumer is seven days of retained audio, and one GPU running jobs
