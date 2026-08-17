@@ -63,6 +63,36 @@ class TestProcess(WorkerTestCase):
         self.assertEqual(written["segments"][0]["text"], "hola")
         self.assertNotIn("durationSec", written)  # duration lives on the row
 
+    def test_success_deletes_the_source_audio_but_keeps_the_transcript(self):
+        self.queue_job()
+        transcribe.run = lambda job_id, audio, log: {
+            "jobId": job_id,
+            "language": "en",
+            "segments": [],
+            "durationSec": 1.0,
+        }
+
+        worker.process(self.conn, db.claim_next(self.conn))
+
+        row = db.get(self.conn, "j1")
+        self.assertEqual(row["audio_deleted"], 1)
+        self.assertFalse(config.audio_dir("j1").exists())
+        self.assertTrue(config.transcript_path("j1").exists())
+
+    def test_error_keeps_the_audio_so_a_retry_has_something_to_run(self):
+        self.queue_job()
+
+        def boom(*_args):
+            raise RuntimeError("nope")
+
+        transcribe.run = boom
+        worker.process(self.conn, db.claim_next(self.conn))
+
+        row = db.get(self.conn, "j1")
+        self.assertEqual(row["status"], db.ERROR)
+        self.assertEqual(row["audio_deleted"], 0)
+        self.assertTrue(config.audio_dir("j1").exists())
+
     def test_pipeline_failure_marks_error_without_killing_the_loop(self):
         self.queue_job()
 

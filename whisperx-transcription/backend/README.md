@@ -48,8 +48,13 @@ Job states are exactly `QUEUED`, `RUNNING`, `DONE`, `ERROR`.
 ## Product configuration
 
 Fixed, not per-job: Whisper **medium**, automatic language detection, word
-alignment on, **diarization off**, one job at a time, seven-day deletion of
-source audio, an `attempt` counter for explicit retries.
+alignment on, **diarization off**, one job at a time, an `attempt` counter for
+explicit retries, and **source audio deleted as soon as the transcript is
+written**. The product keeps transcripts, not source media.
+
+A job that ERRORs keeps its audio, otherwise retry would have nothing to re-run.
+`RETENTION_DAYS` still sweeps those after seven days, so it is now a backstop
+for failed jobs rather than the main deletion path.
 
 Dropping diarization is what removes pyannote, the Hugging Face token, Secrets
 Manager, and a large amount of GPU memory pressure.
@@ -159,9 +164,10 @@ GPU](#running-without-a-gpu).
    fit in 75 GiB: the first attempt filled the disk to 97% mid-pull and killed
    the build.
 2. **Data volume** — an encrypted gp3 EBS volume in the *same AZ* as the
-   instance, with **DeleteOnTermination = false**. 50 GiB is ample: the only
-   real consumer is seven days of retained audio, and one GPU running jobs
-   serially cannot accumulate much. gp3 grows online, so start small.
+   instance, with **DeleteOnTermination = false**. 50 GiB is ample: source audio
+   is deleted as soon as its transcript is written, so the standing content is
+   the ~1.5 GiB model cache plus transcripts, which are tiny. gp3 grows online,
+   so start small.
    `deploy/user-data.sh` formats and mounts it at `/data`.
 3. **Security group** — inbound `443` (and `80`, which Caddy needs for the ACME
    HTTP challenge and the redirect) from `0.0.0.0/0`. **No SSH rule.**
