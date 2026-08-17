@@ -111,7 +111,10 @@ def _shape_words(words: list) -> list:
         shaped.append(
             {
                 "display": text + (" " if i < len(words) - 1 else ""),
-                "low": score is not None and score < LOW_CONFIDENCE,
+                # bool() is load-bearing: whisperx hands back numpy floats, so the
+                # comparison yields np.bool_ and `and` returns that object rather
+                # than a Python bool. json.dumps refuses it.
+                "low": bool(score is not None and score < LOW_CONFIDENCE),
             }
         )
     return shaped

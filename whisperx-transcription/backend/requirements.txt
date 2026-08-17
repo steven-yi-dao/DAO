@@ -1,26 +1,19 @@
-# whisperx / faster-whisper / ctranslate2 are tightly coupled and are the most
-# common source of breakage — do not bump one without re-testing the set on the
-# exact base image.
-# 3.1.5 force-pins faster-whisper==1.0.1, which in turn pins av==11.*. av 11.0.0
-# is the only 11.x release and ships no wheels, only a source tarball, and it
-# will not compile against the FFmpeg 4.4 headers on this image's Ubuntu 22.04
-# base. 3.1.6 leaves faster-whisper unpinned, which breaks that chain.
-whisperx==3.1.6
-# 1.0.3 asks for av<13,>=11.0 rather than ==11.*, so a wheel can satisfy it.
-faster-whisper==1.0.3
-# The point of the whole exercise: 12.3.0 publishes a cp310 manylinux wheel with
-# FFmpeg bundled, so nothing is compiled. Do not let this float back to 11.x.
-av==12.3.0
-# Held below 4.5 deliberately: 4.5 wants cuDNN 9 and this base image has cuDNN 8.
-ctranslate2==4.4.0
+# Let whisperx pick its own faster-whisper, ctranslate2, pyannote-audio, and av.
+# Pinning those separately is what produced an unbuildable set: whisperx 3.1.x
+# force-pins faster-whisper==1.0.1, which pins av==11.*, and av 11.0.0 is the
+# only 11.x release and ships no wheels at all. Every escape from that was
+# blocked -- faster-whisper 1.0.2 added a required `hotwords` field that
+# whisperx 3.1.x does not pass, so the one version with a wheel-friendly av
+# range could not be used.
+#
+# Bumping any one of these still needs the whole set re-tested on the exact base
+# image. The set is coupled; the fix was to stop pretending otherwise.
+whisperx==3.8.6
 
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 
-# torch and torchaudio come from the base image.
-#
-# pyannote.audio is not listed here, but whisperx 3.1.5 depends on
-# pyannote.audio==3.1.1 and pip installs it regardless. Diarization stays off
-# because app/transcribe.py never calls it and no Hugging Face token is
-# configured, not because the package is absent.
+# torch and torchaudio come from the base image, which must stay on 2.8.x:
+# whisperx requires torch~=2.8.0. It also requires ctranslate2>=4.5.0, which
+# needs cuDNN 9, so the base image tag must stay a cudnn9 one.

@@ -1,7 +1,10 @@
 # One image, two services: the API runs it on CPU, the worker runs it with the
 # GPU attached. Keeping them identical means the worker can import the same
 # db/storage modules the API writes through.
-FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-runtime
+# Must stay on torch 2.8.x with cuDNN 9: whisperx requires torch~=2.8.0, and the
+# ctranslate2 it pulls needs cuDNN 9. The old 2.3.0-cuda12.1-cudnn8 image was
+# also on Ubuntu 22.04, whose FFmpeg 4.4 headers could not build PyAV.
+FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
