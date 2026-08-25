@@ -12,9 +12,6 @@ import type {
 import {
   ALLOWED_EXTENSIONS,
   MAX_BYTES,
-  IDLE_WARN_MS,
-  IDLE_LIMIT_S,
-  IDLE_TOTAL_S,
   buildJson,
   buildSrt,
   buildTxt,
@@ -32,7 +29,6 @@ import { HistoryScreen } from './components/HistoryScreen';
 import { TranscriptEditor } from './components/TranscriptEditor';
 import { FlowScreen } from './components/FlowScreen';
 import { SessionBar } from './components/SessionBar';
-import { IdleModal } from './components/IdleModal';
 import './App.css';
 
 let idCounter = 0;
@@ -46,10 +42,6 @@ export default function App() {
   const [connectError, setConnectError] = useState<string | null>(null);
   const [attempts, setAttempts] = useState(0);
   const [instance, setInstance] = useState<Instance | null>(null);
-  const [lastActivity, setLastActivity] = useState(Date.now());
-  const [idleWarn, setIdleWarn] = useState(false);
-  const [idleSecondsLeft, setIdleSecondsLeft] = useState(0);
-  const [idleSecondsRemaining, setIdleSecondsRemaining] = useState(IDLE_TOTAL_S);
 
   const [nav, setNavState] = useState<NavTab>('new');
   const [step, setStep] = useState<FlowStep>(1);
@@ -144,29 +136,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
 
-  // Idle-timeout ticker: warns then ends the session after sitting idle too long.
-  useEffect(() => {
-    const tick = setInterval(() => {
-      if (session !== 'connected') return;
-      const elapsed = Date.now() - lastActivity;
-      setIdleSecondsRemaining(Math.max(0, IDLE_TOTAL_S - Math.floor(elapsed / 1000)));
-      if (elapsed >= IDLE_WARN_MS) {
-        const secondsLeft = IDLE_LIMIT_S - Math.floor((elapsed - IDLE_WARN_MS) / 1000);
-        if (secondsLeft <= 0) {
-          endSession();
-        } else {
-          setIdleWarn(true);
-          setIdleSecondsLeft(secondsLeft);
-        }
-      }
-    }, 1000);
-    return () => clearInterval(tick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, lastActivity]);
-
-  function touchActivity() {
-    setLastActivity(Date.now());
-  }
 
   function startSession() {
     setSession('connecting');
@@ -183,9 +152,6 @@ export default function App() {
         setSession('connected');
         setConnectError(null);
         setInstance({ type: 'ml.g4dn.xlarge', region: 'us-east-2', id });
-        setLastActivity(Date.now());
-        setIdleWarn(false);
-        setIdleSecondsRemaining(IDLE_TOTAL_S);
         setStep(1);
       }
     }, 1300);
@@ -196,18 +162,11 @@ export default function App() {
     setInstance(null);
     setTranscriptionStarted(false);
     completionHandledRef.current.clear();
-    setIdleWarn(false);
     setNavState('new');
     setStep(1);
     setSelectedFileId(null);
     setSelectedSource(null);
     setFiles([]);
-  }
-
-  function keepWorking() {
-    setLastActivity(Date.now());
-    setIdleWarn(false);
-    setIdleSecondsRemaining(IDLE_TOTAL_S);
   }
 
   function toggleSettings() {
@@ -271,7 +230,6 @@ export default function App() {
       };
     });
     setFiles((prev) => [...prev, ...additions]);
-    touchActivity();
   }
 
   // Moves every staged ("selected") file into the shared cloud queue and starts
@@ -287,7 +245,6 @@ export default function App() {
     );
     ready.forEach((f) => runUploadProgress(f.id));
     setStep(2);
-    touchActivity();
   }
 
   // Advances a file's upload phase. The updater stays pure (the random step is
@@ -425,7 +382,6 @@ export default function App() {
 
   function scrubTo(seconds: number) {
     setPlayhead(seconds);
-    touchActivity();
   }
 
   function backFromEditor() {
@@ -475,7 +431,7 @@ export default function App() {
   const showHistoryScreen = isConnected && nav === 'history' && !selected;
 
   return (
-    <div className="app-shell" onClick={touchActivity}>
+    <div className="app-shell">
       <a className="skip-link" href="#main">
         Skip to main content
       </a>
@@ -531,10 +487,9 @@ export default function App() {
       </main>
 
       {isConnected && (
-        <SessionBar session={session} instance={instance} idleSecondsRemaining={idleSecondsRemaining} onEndSession={endSession} />
+        <SessionBar session={session} instance={instance} onEndSession={endSession} />
       )}
 
-      {idleWarn && <IdleModal idleSecondsLeft={idleSecondsLeft} onEndNow={endSession} onKeepWorking={keepWorking} />}
     </div>
   );
 }

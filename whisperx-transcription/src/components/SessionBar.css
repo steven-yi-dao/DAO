@@ -41,16 +41,6 @@
   color: var(--color-text-muted);
 }
 
-.session-bar__idle {
-  font-size: 11px;
-  color: var(--color-text-muted);
-}
-
-.session-bar__idle--urgent {
-  color: var(--color-danger);
-  font-weight: 600;
-}
-
 .session-bar__end {
   background: none;
   border: none;

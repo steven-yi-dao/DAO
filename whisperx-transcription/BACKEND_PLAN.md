@@ -357,7 +357,7 @@ ddb.update_item(... status="QUEUED", inferenceId=resp["InferenceId"] ...)
 - [ ] Replace mock `startSession`/`runUploadProgress`/`runProgress` with: Cognito login → `POST /jobs` → presigned `PUT` → `POST /jobs/{id}/submit` → poll `GET /jobs`.
 - [ ] Map API `status` → existing `FileStatus` (`CREATED/UPLOADED`→`uploading`, `QUEUED`→`queued`, `PROCESSING`→`processing`, `DONE`→`done`, `ERROR`→`error`).
 - [ ] History screen ← `GET /jobs`; editor download ← presigned transcript GET.
-- [ ] Keep the idle-timeout UX, but note it's now cosmetic (no per-session instance to tear down; scale-to-zero handles idle cost).
+- [x] Remove the idle-timeout UX. There is no per-session instance to tear down, so ending a session on a timer saved nothing and only cost the user their queue. Gone: the ticker, `IdleModal`, the footer's auto-ends readout, and the `IDLE_*` constants. Ending a session is now only ever explicit.
 
 ### Phase 6 — Hardening & cost
 - [ ] CloudWatch alarms: endpoint 5xx, async error-topic volume, DynamoDB throttles.

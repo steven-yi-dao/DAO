@@ -32,7 +32,7 @@ export function TranscriptEditor({
 }: TranscriptEditorProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   // timeupdate fires several times a second; only whole-second moves are worth
-  // reporting upward. Reporting also keeps the idle timer awake while listening.
+  // reporting upward, which is all the active-segment marker needs.
   const lastReportedRef = useRef(-1);
 
   function handleTimeUpdate(e: SyntheticEvent<HTMLAudioElement>) {
