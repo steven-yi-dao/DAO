@@ -1,3 +1,4 @@
+import { useRef, type SyntheticEvent } from 'react';
 import type { FileSource, TranscriptFile } from '../types';
 import { formatBytes, formatClock, formatDuration } from '../lib/utils';
 import './TranscriptEditor.css';
@@ -5,6 +6,8 @@ import './TranscriptEditor.css';
 interface TranscriptEditorProps {
   file: TranscriptFile;
   source: FileSource;
+  /** Object URL for the recording, or null when it is not in this browser session. */
+  mediaUrl: string | null;
   playhead: number;
   onBack: () => void;
   onScrub: (seconds: number) => void;
@@ -18,8 +21,37 @@ const DOWNLOAD_FORMATS: { format: 'txt' | 'srt' | 'json'; label: string; desc: s
   { format: 'json', label: 'JSON', desc: 'JSON' },
 ];
 
-export function TranscriptEditor({ file, playhead, onBack, onScrub, onSegmentEdit, onDownload }: TranscriptEditorProps) {
-  const playheadPercent = file.duration ? Math.min(100, (playhead / file.duration) * 100) : 0;
+export function TranscriptEditor({
+  file,
+  mediaUrl,
+  playhead,
+  onBack,
+  onScrub,
+  onSegmentEdit,
+  onDownload,
+}: TranscriptEditorProps) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  // timeupdate fires several times a second; only whole-second moves are worth
+  // reporting upward. Reporting also keeps the idle timer awake while listening.
+  const lastReportedRef = useRef(-1);
+
+  function handleTimeUpdate(e: SyntheticEvent<HTMLAudioElement>) {
+    const seconds = Math.floor(e.currentTarget.currentTime);
+    if (seconds === lastReportedRef.current) return;
+    lastReportedRef.current = seconds;
+    onScrub(seconds);
+  }
+
+  function jumpTo(seconds: number) {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.currentTime = seconds;
+      // Clicking a timestamp is a user gesture, so playback may start from here.
+      void audio.play().catch(() => undefined);
+    }
+    lastReportedRef.current = Math.floor(seconds);
+    onScrub(seconds);
+  }
 
   return (
     <article className="editor">
@@ -57,23 +89,21 @@ export function TranscriptEditor({ file, playhead, onBack, onScrub, onSegmentEdi
             score — worth double-checking against the recording
           </p>
 
-          <div className="editor__video" aria-hidden="true">
-            <div className="editor__video-stage">
-              <div className="editor__video-center">
-                <div className="editor__play">
-                  <div className="editor__play-triangle" />
-                </div>
-                <div className="editor__video-caption">video preview — source recording drops in here</div>
-              </div>
-            </div>
-            <div className="editor__video-bar">
-              <span className="editor__video-time">{formatClock(playhead)}</span>
-              <div className="editor__scrubber">
-                <div className="editor__scrubber-fill" style={{ width: `${playheadPercent}%` }} />
-              </div>
-              <span className="editor__video-time">{formatDuration(file.duration)}</span>
-            </div>
-          </div>
+          {mediaUrl ? (
+            <audio
+              ref={audioRef}
+              className="editor__audio"
+              src={mediaUrl}
+              controls
+              preload="metadata"
+              onTimeUpdate={handleTimeUpdate}
+              aria-label={`Recording of ${file.name}`}
+            />
+          ) : (
+            <p className="editor__no-audio">
+              The recording is not available to play here — it stays in the browser session it was uploaded from.
+            </p>
+          )}
         </>
       )}
 
@@ -87,16 +117,21 @@ export function TranscriptEditor({ file, playhead, onBack, onScrub, onSegmentEdi
       {file.segments &&
         file.segments.map((seg, idx) => {
           const lowWords = seg.words.filter((w) => w.low).map((w) => w.display.trim()).filter(Boolean);
+          const active = playhead >= seg.start && playhead < seg.end;
           return (
-            <div key={idx} className="segment">
-              <button
-                type="button"
-                className="segment__time"
-                onClick={() => onScrub(seg.start)}
-                aria-label={`Jump to ${formatClock(seg.start)}`}
-              >
-                {formatClock(seg.start)}
-              </button>
+            <div key={idx} className={active ? 'segment segment--active' : 'segment'}>
+              {mediaUrl ? (
+                <button
+                  type="button"
+                  className="segment__time"
+                  onClick={() => jumpTo(seg.start)}
+                  aria-label={`Play from ${formatClock(seg.start)}`}
+                >
+                  {formatClock(seg.start)}
+                </button>
+              ) : (
+                <span className="segment__time segment__time--static">{formatClock(seg.start)}</span>
+              )}
               <div className="segment__body">
                 {seg.speaker && <div className="segment__speaker">{seg.speaker}</div>}
                 <div

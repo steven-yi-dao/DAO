@@ -81,11 +81,18 @@ export default function App() {
   settingsRef.current = settings;
   const filesRef = useRef(files);
   filesRef.current = files;
+  // Object URLs for recordings uploaded in this session, keyed by file id (a history
+  // entry shares the URL of the queue entry it came from). Playback is entirely local:
+  // the audio is never fetched back from the server, which does not keep it.
+  const mediaUrlsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
+    const mediaUrls = mediaUrlsRef.current;
     return () => {
       intervalsRef.current.forEach((id) => clearInterval(id));
       intervalsRef.current.clear();
+      new Set(mediaUrls.values()).forEach((url) => URL.revokeObjectURL(url));
+      mediaUrls.clear();
     };
   }, []);
 
@@ -251,6 +258,7 @@ export default function App() {
           uploader: 'Dawson Ash',
         };
       }
+      mediaUrlsRef.current.set(id, URL.createObjectURL(f));
       return {
         id,
         name: f.name,
@@ -382,6 +390,8 @@ export default function App() {
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       segments: file.segments,
     };
+    const mediaUrl = mediaUrlsRef.current.get(file.id);
+    if (mediaUrl) mediaUrlsRef.current.set(entry.id, mediaUrl);
     setHistory((prev) => [entry, ...prev]);
   }
 
@@ -394,7 +404,17 @@ export default function App() {
   }
 
   function removeFile(fileId: string) {
+    releaseMediaUrl(fileId);
     setFiles((prev) => prev.filter((f) => f.id !== fileId));
+  }
+
+  // Drops this file's claim on its recording, revoking the URL only once nothing
+  // else — a history entry made from the same upload — still points at it.
+  function releaseMediaUrl(fileId: string) {
+    const url = mediaUrlsRef.current.get(fileId);
+    if (!url) return;
+    mediaUrlsRef.current.delete(fileId);
+    if (![...mediaUrlsRef.current.values()].includes(url)) URL.revokeObjectURL(url);
   }
 
   function selectFile(fileId: string, source: FileSource) {
@@ -475,6 +495,7 @@ export default function App() {
           <TranscriptEditor
             file={selected}
             source={selectedSource!}
+            mediaUrl={mediaUrlsRef.current.get(selected.id) ?? null}
             playhead={playhead}
             onBack={backFromEditor}
             onScrub={scrubTo}

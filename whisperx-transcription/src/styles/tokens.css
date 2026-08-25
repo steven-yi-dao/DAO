@@ -61,10 +61,6 @@
   --color-dot-idle: #63615a;
 
   /* Video-preview mock (decorative dark surface) */
-  --color-video-bg: #1b1e24;
-  --color-video-bg-alt: #20232a;
-  --color-video-stripe: #262a32;
-  --color-video-accent: #7c9cd9;
 
   /* Typography */
   --font-sans: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial, sans-serif;
