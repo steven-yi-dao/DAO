@@ -3,9 +3,6 @@ import type { FileSource, FlowStep, NavTab, Segment, SessionState, TranscriptFil
 import {
   ALLOWED_EXTENSIONS,
   MAX_BYTES,
-  IDLE_WARN_MS,
-  IDLE_LIMIT_S,
-  IDLE_TOTAL_S,
   buildJson,
   buildSrt,
   buildTxt,
@@ -29,7 +26,6 @@ import { HistoryScreen } from './components/HistoryScreen';
 import { TranscriptEditor } from './components/TranscriptEditor';
 import { FlowScreen } from './components/FlowScreen';
 import { SessionBar } from './components/SessionBar';
-import { IdleModal } from './components/IdleModal';
 import './App.css';
 
 let idCounter = 0;
@@ -41,10 +37,6 @@ function nextId(prefix: string): string {
 export default function App() {
   const [session, setSession] = useState<SessionState>('disconnected');
   const [connectError, setConnectError] = useState<string | null>(null);
-  const [lastActivity, setLastActivity] = useState(Date.now());
-  const [idleWarn, setIdleWarn] = useState(false);
-  const [idleSecondsLeft, setIdleSecondsLeft] = useState(0);
-  const [idleSecondsRemaining, setIdleSecondsRemaining] = useState(IDLE_TOTAL_S);
 
   const [nav, setNavState] = useState<NavTab>('new');
   const [step, setStep] = useState<FlowStep>(1);
@@ -67,6 +59,11 @@ export default function App() {
   // The picked File objects themselves, which the TranscriptFile rows can't
   // carry. Without these there is nothing to POST.
   const pendingFilesRef = useRef<Map<string, File>>(new Map());
+  // Object URLs for the recordings picked this session, keyed by the same client
+  // id. Unlike pendingFilesRef these outlive the upload, so the editor can still
+  // play a file whose bytes the POST has already consumed. Playback is entirely
+  // local; the server deletes source audio once the transcript is written.
+  const mediaUrlsRef = useRef<Map<string, string>>(new Map());
   const filesRef = useRef(files);
   filesRef.current = files;
 
@@ -101,30 +98,6 @@ export default function App() {
     });
   }, [jobs]);
 
-  // Idle-timeout ticker: warns then ends the session after sitting idle too long.
-  useEffect(() => {
-    const tick = setInterval(() => {
-      if (session !== 'connected') return;
-      const elapsed = Date.now() - lastActivity;
-      setIdleSecondsRemaining(Math.max(0, IDLE_TOTAL_S - Math.floor(elapsed / 1000)));
-      if (elapsed >= IDLE_WARN_MS) {
-        const secondsLeft = IDLE_LIMIT_S - Math.floor((elapsed - IDLE_WARN_MS) / 1000);
-        if (secondsLeft <= 0) {
-          endSession();
-        } else {
-          setIdleWarn(true);
-          setIdleSecondsLeft(secondsLeft);
-        }
-      }
-    }, 1000);
-    return () => clearInterval(tick);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, lastActivity]);
-
-  function touchActivity() {
-    setLastActivity(Date.now());
-  }
-
   // "Connecting" is a health check against the always-running server, not an
   // instance launch — there is nothing to start up.
   async function startSession() {
@@ -133,9 +106,6 @@ export default function App() {
     try {
       await health();
       setSession('connected');
-      setLastActivity(Date.now());
-      setIdleWarn(false);
-      setIdleSecondsRemaining(IDLE_TOTAL_S);
       setStep(1);
     } catch (err) {
       setSession('disconnected');
@@ -148,20 +118,14 @@ export default function App() {
   function endSession() {
     setSession('disconnected');
     pendingFilesRef.current.clear();
+    revokeAllMediaUrls();
     setFiles([]);
     setSessionJobIds([]);
     setActionError(null);
-    setIdleWarn(false);
     setNavState('new');
     setStep(1);
     setSelectedFileId(null);
     setSelectedSource(null);
-  }
-
-  function keepWorking() {
-    setLastActivity(Date.now());
-    setIdleWarn(false);
-    setIdleSecondsRemaining(IDLE_TOTAL_S);
   }
 
   // Validated client-side first so the user gets an answer without a round trip.
@@ -180,10 +144,10 @@ export default function App() {
         return { ...base, status: 'error' as const, errorMsg: 'File too large — 500MB max.' };
       }
       pendingFilesRef.current.set(id, f);
+      mediaUrlsRef.current.set(id, URL.createObjectURL(f));
       return { ...base, status: 'selected' as const, errorMsg: null };
     });
     setFiles((prev) => [...prev, ...additions]);
-    touchActivity();
   }
 
   function addSelectedToQueue() {
@@ -193,7 +157,6 @@ export default function App() {
       prev.map((f) => (f.status === 'selected' ? { ...f, status: 'uploading' as const, progress: 0 } : f)),
     );
     setStep(2);
-    touchActivity();
     ready.forEach(uploadOne);
   }
 
@@ -257,17 +220,31 @@ export default function App() {
     if (!row) return;
     if (!row.jobId) {
       pendingFilesRef.current.delete(fileId);
+      releaseMediaUrl(fileId);
       setFiles((prev) => prev.filter((f) => f.id !== fileId));
       return;
     }
     try {
       await deleteJob(row.jobId);
+      releaseMediaUrl(fileId);
       setFiles((prev) => prev.filter((f) => f.id !== fileId));
       setSessionJobIds((prev) => prev.filter((id) => id !== row.jobId));
       setActionError(null);
     } catch (err) {
       setActionError(errorMessage(err));
     }
+  }
+
+  function releaseMediaUrl(fileId: string) {
+    const url = mediaUrlsRef.current.get(fileId);
+    if (!url) return;
+    mediaUrlsRef.current.delete(fileId);
+    URL.revokeObjectURL(url);
+  }
+
+  function revokeAllMediaUrls() {
+    mediaUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    mediaUrlsRef.current.clear();
   }
 
   function selectFile(fileId: string, source: FileSource) {
@@ -278,7 +255,6 @@ export default function App() {
 
   function scrubTo(seconds: number) {
     setPlayhead(seconds);
-    touchActivity();
   }
 
   function backFromEditor() {
@@ -369,7 +345,7 @@ export default function App() {
   const showHistoryScreen = isConnected && nav === 'history' && !selected;
 
   return (
-    <div className="app-shell" onClick={touchActivity}>
+    <div className="app-shell">
       <a className="skip-link" href="#main">
         Skip to main content
       </a>
@@ -394,6 +370,7 @@ export default function App() {
         {selected && (
           <TranscriptEditor
             file={selected}
+            mediaUrl={mediaUrlsRef.current.get(selected.id) ?? null}
             playhead={playhead}
             transcriptPending={transcriptPending}
             onBack={backFromEditor}
@@ -428,10 +405,9 @@ export default function App() {
       </main>
 
       {isConnected && (
-        <SessionBar session={session} idleSecondsRemaining={idleSecondsRemaining} onEndSession={endSession} />
+        <SessionBar session={session} onEndSession={endSession} />
       )}
 
-      {idleWarn && <IdleModal idleSecondsLeft={idleSecondsLeft} onEndNow={endSession} onKeepWorking={keepWorking} />}
     </div>
   );
 }

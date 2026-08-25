@@ -67,8 +67,13 @@ Flow gotchas:
   every job uploaded this session is `done` or `error`.
 - The transcript is a second request (`/api/jobs/{id}/transcript`) made when the
   editor opens; expect a brief "Loading transcript…" before `.segment__text`.
-- Idle timeout ends the session after ~15 min; clicks reset it. Ending a session
-  clears only the local view — jobs come back from the server on reconnect.
+- The editor plays the source recording from an object URL held for the session,
+  so it works only for files uploaded in *this* browser session. Reopening a job
+  from History shows "The recording is not available to play here" instead, with
+  timestamps as plain labels rather than buttons.
+- There is no idle timeout. A session ends only when "End session" is clicked,
+  and that clears only the local view — jobs come back from the server on
+  reconnect.
 
 Useful assertions: `.queue-row .file-name`, `.history__row .file-name`,
 `.segment__text`, `.word--low`, `.app-alert`, and tag texts `In queue`,
