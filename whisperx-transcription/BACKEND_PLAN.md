@@ -173,9 +173,11 @@ Two fixes had to be carried into the new code rather than deleted with the old:
 - Nothing has been deployed to EC2. Verified locally and by the test suites only.
 - Root `amplify.yml` still hosts the SPA on Amplify. Once Caddy serves `dist/`
   from the instance, Amplify becomes redundant and should be retired.
-- The idle-timeout UX still assumes a per-session instance. It now only clears
-  the local view — jobs live on the server and come back on reconnect — but on
-  an always-running server it remains cosmetic.
+- ~~The idle-timeout UX still assumes a per-session instance.~~ Removed. There
+  was no per-session instance to tear down, so the timer freed nothing and only
+  took the queue away from anyone who stepped out. Gone: the ticker, IdleModal,
+  the footer's auto-ends readout, and the `IDLE_*` constants. Ending a session
+  is now only ever explicit.
 - Transcript retention and PII policy — transcripts are still kept forever.
   Source audio is no longer retained: it is deleted the moment the transcript is
   written, so the only lasting copy of a recording's content is its transcript.
