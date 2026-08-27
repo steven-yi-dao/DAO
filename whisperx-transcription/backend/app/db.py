@@ -21,6 +21,13 @@ DONE = "DONE"
 ERROR = "ERROR"
 STATUSES = (QUEUED, RUNNING, DONE, ERROR)
 
+# Which post-alignment treatment the job asked for. "standard" is WhisperX on
+# its own; "vad" is BetterTranscribe, the experimental silero-vad boundary
+# correction in app/vad.py.
+PIPELINE_STANDARD = "standard"
+PIPELINE_VAD = "vad"
+PIPELINES = (PIPELINE_STANDARD, PIPELINE_VAD)
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
   id            TEXT PRIMARY KEY,
@@ -29,6 +36,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   size_bytes    INTEGER NOT NULL,
   duration_sec  REAL,
   status        TEXT    NOT NULL CHECK (status IN ('QUEUED','RUNNING','DONE','ERROR')),
+  pipeline      TEXT    NOT NULL DEFAULT 'standard',
   attempt       INTEGER NOT NULL DEFAULT 1,
   language      TEXT,
   segment_count INTEGER,
@@ -67,6 +75,22 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
 
 def init(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    _migrate(conn)
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Bring an existing table up to SCHEMA.
+
+    SCHEMA is CREATE TABLE IF NOT EXISTS, so it does nothing at all to the live
+    /data/jobs.db - a column added there only ever reaches a fresh database.
+    Every additive change needs a line here too. Both processes call init() on
+    startup, so this has to stay idempotent.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+    if "pipeline" not in columns:
+        conn.execute(
+            "ALTER TABLE jobs ADD COLUMN pipeline TEXT NOT NULL DEFAULT 'standard'"
+        )
 
 
 def to_api(row: sqlite3.Row) -> dict:
@@ -78,6 +102,7 @@ def to_api(row: sqlite3.Row) -> dict:
         "sizeBytes": row["size_bytes"],
         "durationSec": row["duration_sec"],
         "status": row["status"],
+        "pipeline": row["pipeline"],
         "attempt": row["attempt"],
         "language": row["language"],
         "segmentCount": row["segment_count"],
@@ -91,14 +116,21 @@ def to_api(row: sqlite3.Row) -> dict:
 # ---- writes -----------------------------------------------------------------
 
 
-def insert(conn: sqlite3.Connection, job_id: str, file_name: str, stored_name: str, size_bytes: int) -> sqlite3.Row:
+def insert(
+    conn: sqlite3.Connection,
+    job_id: str,
+    file_name: str,
+    stored_name: str,
+    size_bytes: int,
+    pipeline: str = PIPELINE_STANDARD,
+) -> sqlite3.Row:
     """Called only after the upload has been renamed into place, so a QUEUED row
     can never point at a partial file."""
     ts = now_iso()
     conn.execute(
-        "INSERT INTO jobs (id, file_name, stored_name, size_bytes, status, created_at, updated_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (job_id, file_name, stored_name, size_bytes, QUEUED, ts, ts),
+        "INSERT INTO jobs (id, file_name, stored_name, size_bytes, status, pipeline, created_at, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (job_id, file_name, stored_name, size_bytes, QUEUED, pipeline, ts, ts),
     )
     return get(conn, job_id)
 

@@ -35,7 +35,7 @@ def process(conn, row) -> None:
         return
 
     try:
-        payload = transcribe.run(job_id, audio, log_file)
+        payload = transcribe.run(job_id, audio, log_file, row["pipeline"])
     except Exception as exc:
         db.finish_error(conn, job_id, f"{type(exc).__name__}: {exc}")
         log.exception("job %s failed", job_id)

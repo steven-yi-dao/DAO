@@ -1,0 +1,55 @@
+.experiment-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Entries are newest first, so the rule sits above every entry but the first —
+   it reads as a separator between iterations rather than a trailing line. */
+.experiment-log__entry + .experiment-log__entry {
+  margin-top: var(--space-5);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.experiment-log__date {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-brand);
+  margin: 0 0 var(--space-3);
+}
+
+.experiment-log__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin: var(--space-4) 0 var(--space-1);
+}
+
+.experiment-log__entry > .experiment-log__label:first-of-type {
+  margin-top: 0;
+}
+
+.experiment-log__body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-body);
+  margin: 0;
+}
+
+/* base.css strips list markers globally; the steps are the one place in the app
+   that genuinely wants them, since the order things were done in is the point. */
+.experiment-log__steps {
+  list-style: disc;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-body);
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.experiment-log__steps li + li {
+  margin-top: var(--space-2);
+}

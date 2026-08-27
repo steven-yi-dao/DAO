@@ -32,18 +32,18 @@ class WorkerTestCase(unittest.TestCase):
         transcribe.run = self._real_run
         self.conn.close()
 
-    def queue_job(self, job_id="j1", name="clip.wav", with_audio=True):
+    def queue_job(self, job_id="j1", name="clip.wav", with_audio=True, pipeline=db.PIPELINE_STANDARD):
         if with_audio:
             tmp = storage.new_tmp_path()
             tmp.write_bytes(b"audio")
             storage.finalize(tmp, job_id, name)
-        return db.insert(self.conn, job_id, name, name, 5)
+        return db.insert(self.conn, job_id, name, name, 5, pipeline)
 
 
 class TestProcess(WorkerTestCase):
     def test_success_writes_the_transcript_and_records_measured_duration(self):
         self.queue_job()
-        transcribe.run = lambda job_id, audio, log: {
+        transcribe.run = lambda job_id, audio, log, pipeline: {
             "jobId": job_id,
             "language": "es",
             "segments": [{"start": 0.0, "end": 1.0, "speaker": None, "text": "hola", "words": []}],
@@ -65,7 +65,7 @@ class TestProcess(WorkerTestCase):
 
     def test_success_deletes_the_source_audio_but_keeps_the_transcript(self):
         self.queue_job()
-        transcribe.run = lambda job_id, audio, log: {
+        transcribe.run = lambda job_id, audio, log, pipeline: {
             "jobId": job_id,
             "language": "en",
             "segments": [],
@@ -107,6 +107,23 @@ class TestProcess(WorkerTestCase):
         self.assertIn("CUDA out of memory", row["error_msg"])
         self.assertFalse(config.transcript_path("j1").exists())
 
+    def test_the_row_decides_which_pipeline_runs(self):
+        """BetterTranscribe is a column on the job, not a worker-wide setting, so
+        a vad job and a standard job can sit in the same queue."""
+        seen = []
+
+        def record(job_id, audio, log, pipeline):
+            seen.append(pipeline)
+            return {"jobId": job_id, "language": "en", "segments": [], "durationSec": 1.0}
+
+        transcribe.run = record
+        self.queue_job("j1", pipeline=db.PIPELINE_VAD)
+        self.queue_job("j2", pipeline=db.PIPELINE_STANDARD)
+        worker.process(self.conn, db.claim_next(self.conn))
+        worker.process(self.conn, db.claim_next(self.conn))
+
+        self.assertEqual(seen, [db.PIPELINE_VAD, db.PIPELINE_STANDARD])
+
     def test_missing_audio_is_an_error_not_a_crash(self):
         self.queue_job(with_audio=False)
         worker.process(self.conn, db.claim_next(self.conn))
@@ -122,7 +139,7 @@ class TestProcess(WorkerTestCase):
         self.assertEqual(db.get(self.conn, "j1")["status"], db.ERROR)
 
         self.assertTrue(db.retry(self.conn, "j1"))
-        transcribe.run = lambda job_id, audio, log: {
+        transcribe.run = lambda job_id, audio, log, pipeline: {
             "jobId": job_id, "language": "en", "segments": [], "durationSec": 1.0,
         }
         worker.process(self.conn, db.claim_next(self.conn))

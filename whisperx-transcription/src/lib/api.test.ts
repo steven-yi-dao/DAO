@@ -21,6 +21,7 @@ const JOB: ApiJob = {
   sizeBytes: 2048,
   durationSec: 137.4,
   status: 'DONE',
+  pipeline: 'standard',
   attempt: 1,
   language: 'en',
   segmentCount: 42,
@@ -75,6 +76,7 @@ describe('mapJob', () => {
       size: 2048,
       duration: 137.4,
       status: 'done',
+      pipeline: 'standard',
       progress: 100,
       errorMsg: null,
       date: formatJobDate(JOB.createdAt),
@@ -234,6 +236,22 @@ describe('createJob', () => {
     const form = xhr().sent as FormData;
     expect(form).toBeInstanceOf(FormData);
     expect((form.get('file') as File).name).toBe('clip.wav');
+    // Absent means "standard" to the server, but sending it explicitly is what
+    // keeps the two tools distinguishable in the job list.
+    expect(form.get('pipeline')).toBe('standard');
+  });
+
+  it('sends the tool the caller picked, so BetterTranscribe reaches the worker', async () => {
+    const xhr = useFakeXhr();
+    const promise = createJob(file, { pipeline: 'vad' });
+    xhr().respond(201, JSON.stringify({ ...JOB, pipeline: 'vad' }));
+    await promise;
+    expect((xhr().sent as FormData).get('pipeline')).toBe('vad');
+  });
+
+  it('reads a pre-BetterTranscribe response without inventing an undefined field', () => {
+    const { pipeline: _dropped, ...older } = JOB;
+    expect(mapJob(older as ApiJob).pipeline).toBe('standard');
   });
 
   it('reports upload progress, ending at 100', async () => {

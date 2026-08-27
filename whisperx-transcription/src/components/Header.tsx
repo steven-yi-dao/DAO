@@ -4,15 +4,17 @@ import './Header.css';
 interface HeaderProps {
   isConnected: boolean;
   nav: NavTab;
+  /** Name of the tool this session is running. */
+  toolName: string;
   onToggleHistory: () => void;
 }
 
-export function Header({ isConnected, nav, onToggleHistory }: HeaderProps) {
+export function Header({ isConnected, nav, toolName, onToggleHistory }: HeaderProps) {
   return (
     <header className="app-header">
       <div className="app-header__title">
         Digital Accessibility Office
-        {isConnected && <span className="app-header__subtitle"> · Transcribe</span>}
+        {isConnected && <span className="app-header__subtitle"> · {toolName}</span>}
       </div>
       <div className="app-header__account">
         {isConnected && (

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { FileSource, FlowStep, NavTab, Segment, SessionState, TranscriptFile } from './types';
+import type { FileSource, FlowStep, NavTab, Pipeline, Segment, SessionState, TranscriptFile } from './types';
 import {
   ALLOWED_EXTENSIONS,
   MAX_BYTES,
@@ -17,6 +17,7 @@ import {
   mapJob,
   retryJob,
 } from './lib/api';
+import { toolFor } from './lib/tools';
 import { useJobPolling } from './hooks/useJobPolling';
 import { useQueueAnnouncements } from './hooks/useQueueAnnouncements';
 import { Header } from './components/Header';
@@ -37,6 +38,10 @@ function nextId(prefix: string): string {
 export default function App() {
   const [session, setSession] = useState<SessionState>('disconnected');
   const [connectError, setConnectError] = useState<string | null>(null);
+  // Which tool the session was opened with. The backend takes it per job, but
+  // the flow is one tool at a time — you pick on the Tools screen and go back
+  // there to switch, so a single value covers the whole session.
+  const [pipeline, setPipeline] = useState<Pipeline>('standard');
 
   const [nav, setNavState] = useState<NavTab>('new');
   const [step, setStep] = useState<FlowStep>(1);
@@ -100,7 +105,8 @@ export default function App() {
 
   // "Connecting" is a health check against the always-running server, not an
   // instance launch — there is nothing to start up.
-  async function startSession() {
+  async function startSession(next: Pipeline) {
+    setPipeline(next);
     setSession('connecting');
     setConnectError(null);
     try {
@@ -117,6 +123,7 @@ export default function App() {
   // browser and come back on the next connect.
   function endSession() {
     setSession('disconnected');
+    setPipeline('standard');
     pendingFilesRef.current.clear();
     revokeAllMediaUrls();
     setFiles([]);
@@ -136,7 +143,7 @@ export default function App() {
     const additions: TranscriptFile[] = arr.map((f) => {
       const ext = (f.name.split('.').pop() || '').toLowerCase();
       const id = nextId('f');
-      const base = { id, jobId: null, name: f.name, size: f.size, duration: 0, progress: 0 };
+      const base = { id, jobId: null, name: f.name, size: f.size, duration: 0, progress: 0, pipeline };
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
         return { ...base, status: 'error' as const, errorMsg: 'Unsupported format — try MP3, WAV, M4A, FLAC, or OGG.' };
       }
@@ -165,6 +172,7 @@ export default function App() {
     if (!blob) return;
     try {
       const job = await createJob(blob, {
+        pipeline,
         onProgress: (percent) =>
           setFiles((prev) => prev.map((f) => (f.id === row.id ? { ...f, progress: percent } : f))),
       });
@@ -352,7 +360,12 @@ export default function App() {
 
       <LiveAnnouncer announcement={queueAnnouncement} />
 
-      <Header isConnected={isConnected} nav={nav} onToggleHistory={() => setNav(nav === 'history' ? 'new' : 'history')} />
+      <Header
+        isConnected={isConnected}
+        nav={nav}
+        toolName={toolFor(pipeline).name}
+        onToggleHistory={() => setNav(nav === 'history' ? 'new' : 'history')}
+      />
 
       <main id="main" className="app-main" tabIndex={-1}>
         {isConnected && alert && (

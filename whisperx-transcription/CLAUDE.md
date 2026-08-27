@@ -20,6 +20,11 @@ Two halves:
 - Two suites: `npm test` (client unit tests, stubbed transport) and
   `npm run test:contract` (real client against a real uvicorn — this is the one
   that catches contract drift).
+- The tool list lives in `src/lib/tools.ts` and the dated record behind each
+  experimental tool's (i) lives in `src/lib/experiments.ts`. Iterating on an
+  experimental tool means prepending an entry to the latter — leave the older
+  entries alone, and leave `result` saying "Pending" until it has actually been
+  measured.
 
 ## Architecture
 
@@ -34,9 +39,17 @@ the worker died, and gets requeued.
 
 ## Working on the backend
 
-- Keep `whisperx`, `faster-whisper`, and `ctranslate2` pinned together. They are
-  tightly coupled and the most common source of breakage — do not bump one
-  without re-testing the set on the exact base image.
+- Keep `whisperx`, `faster-whisper`, `ctranslate2`, and `silero-vad` pinned
+  together. They are tightly coupled and the most common source of breakage — do
+  not bump one without re-testing the set on the exact base image, and re-confirm
+  torch is still 2.8.x afterwards.
+- `app/vad.py` is split so the judgement is testable: `speech_regions` touches
+  torch and the model, `correct_segments` is pure Python over dicts and floats.
+  Keep new logic on the pure side — `tests/test_vad.py` runs on a bare
+  interpreter with no torch and no GPU.
+- Every additive schema change needs a line in `db._migrate` as well as in
+  `SCHEMA`. `SCHEMA` is `CREATE TABLE IF NOT EXISTS`, so on its own it never
+  reaches the live `/data/jobs.db`.
 - Model weights load once and stay warm. Any cache keyed by model or language
   must be bounded to the *active* entry and free the previous one; unbounded
   caches are what exhausted the T4 in the previous implementation.

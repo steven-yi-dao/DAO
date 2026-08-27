@@ -19,6 +19,26 @@
   box-shadow: var(--shadow-modal);
 }
 
+/* Reading width. The scroll lives on the body rather than the whole dialog so
+   the title and the Close button stay put as a long log scrolls under them. */
+.modal--wide {
+  width: 520px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  max-height: min(70vh, 640px);
+}
+
+.modal--wide .modal__body {
+  overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+}
+
+.modal--wide .modal__actions {
+  justify-content: flex-end;
+}
+
 .modal__title {
   font-size: 15.5px;
   font-weight: 700;

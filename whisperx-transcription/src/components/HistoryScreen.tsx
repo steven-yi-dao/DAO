@@ -1,5 +1,6 @@
 import type { TranscriptFile } from '../types';
 import { formatBytes, formatDuration } from '../lib/utils';
+import { PipelineChip } from './PipelineChip';
 import { StatusBadge } from './StatusBadge';
 import './HistoryScreen.css';
 
@@ -18,7 +19,8 @@ export function HistoryScreen({ history, onView }: HistoryScreenProps) {
             <div className="history__row-main">
               <div className="file-name">{file.name}</div>
               <div className="file-meta">
-                {file.date} · {formatBytes(file.size)} · {file.duration ? formatDuration(file.duration) : '—'}
+                {file.date} · {formatBytes(file.size)} · {file.duration ? formatDuration(file.duration) : '—'}{' '}
+                <PipelineChip pipeline={file.pipeline} />
               </div>
             </div>
             <div className="history__aside">

@@ -32,6 +32,24 @@ ALLOWED_EXTENSIONS = {"mp3", "wav", "m4a", "flac", "ogg", "mp4", "aac"}
 # there is no pyannote and no Hugging Face token.
 MODEL_NAME = os.environ.get("WHISPER_MODEL", "medium")
 
+# --- BetterTranscribe (experimental) -----------------------------------------
+# Tunables for the silero-vad correction pass in app/vad.py. Exposed as
+# environment variables because tuning them is the whole point of the
+# experiment: the numbers below are a starting guess, not a measured result.
+#
+# SNAP_TOLERANCE is how far a caption boundary may travel to reach a speech
+# edge. Too small and nothing moves; too large and a boundary snaps onto a
+# neighbouring utterance's edge instead of its own.
+VAD_SNAP_TOLERANCE_S = float(os.environ.get("VAD_SNAP_TOLERANCE_S", 0.35))
+# A pause at least this long *inside* one segment splits it into two captions.
+VAD_MIN_SPLIT_SILENCE_S = float(os.environ.get("VAD_MIN_SPLIT_SILENCE_S", 0.70))
+# Speech shorter than this inside a would-be gap does not veto a split; it is
+# the slack that keeps VAD's own padding from suppressing every split.
+VAD_GAP_SPEECH_TOLERANCE_S = float(os.environ.get("VAD_GAP_SPEECH_TOLERANCE_S", 0.10))
+# A correction that would leave a caption shorter than this is abandoned and the
+# original boundaries are kept. Nothing is ever dropped.
+VAD_MIN_SEGMENT_S = float(os.environ.get("VAD_MIN_SEGMENT_S", 0.20))
+
 
 def ensure_dirs() -> None:
     for d in (UPLOADS_DIR, TMP_DIR, TRANSCRIPTS_DIR, LOGS_DIR, MODELS_DIR):

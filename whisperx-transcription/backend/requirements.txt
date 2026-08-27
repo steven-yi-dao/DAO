@@ -10,6 +10,17 @@
 # image. The set is coupled; the fix was to stop pretending otherwise.
 whisperx==3.8.6
 
+# BetterTranscribe's boundary correction. The pip package over
+# torch.hub.load('snakers4/silero-vad'): the wheel bundles the weights, so there
+# is no runtime network fetch and nothing extra to manage under /data/models.
+# Declares torch>=1.12.0 and torchaudio>=0.12.0 with no upper bound, so it does
+# not drag torch off the 2.8.x the base image pins. It also pulls onnxruntime
+# unconditionally at this version, which is what grew the image; 6.x moves that
+# to an extra but changes VAD defaults, so it is not a free bump. It joins the
+# coupled set above: re-test the whole set on the exact base image before
+# bumping, and re-confirm torch is still 2.8.x afterwards.
+silero-vad==5.1.2
+
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
