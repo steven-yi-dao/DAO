@@ -1,0 +1,11 @@
+.pipeline-chip {
+  display: inline-block;
+  /* Stated rather than inherited: it sits inside .file-meta, whose mono face it
+     would otherwise pick up and then silently follow if that ever changed. */
+  font: 600 10.5px var(--font-mono);
+  color: var(--color-brand);
+  background: var(--color-brand-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}

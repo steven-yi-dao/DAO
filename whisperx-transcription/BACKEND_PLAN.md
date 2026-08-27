@@ -25,7 +25,7 @@ Cognito — was removed in favour of one server.
 | **Diarization** | Off |
 | **Concurrency** | One job at a time |
 | **States** | `QUEUED`, `RUNNING`, `DONE`, `ERROR` |
-| **Retention** | Source audio deleted after 7 days; rows and transcripts kept |
+| **Retention** | Source audio deleted as soon as the transcript is written; rows and transcripts kept. Audio for ERRORed jobs is held for retry and swept after 7 days |
 | **Retries** | Explicit, tracked by an `attempt` counter |
 | **Edits** | Backend stores the original WhisperX output only; review-step edits stay client-side |
 | **Job updates** | Polling. The frontend polls `GET /api/jobs` every 2s |
@@ -178,8 +178,9 @@ Two fixes had to be carried into the new code rather than deleted with the old:
   took the queue away from anyone who stepped out. Gone: the ticker, IdleModal,
   the footer's auto-ends readout, and the `IDLE_*` constants. Ending a session
   is now only ever explicit.
-- Transcript retention and PII policy — audio and transcripts may be sensitive.
-  Source audio is deleted after 7 days; transcripts are currently kept forever.
+- Transcript retention and PII policy — transcripts are still kept forever.
+  Source audio is no longer retained: it is deleted the moment the transcript is
+  written, so the only lasting copy of a recording's content is its transcript.
 
 ---
 

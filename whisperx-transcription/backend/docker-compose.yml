@@ -12,6 +12,15 @@ services:
       - caddy_config:/config
     environment:
       DOMAIN: ${DOMAIN:-localhost}
+    # Kept out of .env, and read with format: raw, because a bcrypt hash
+    # contains '$' and compose interpolates env files by default — it read the
+    # salt as a variable name and substituted a blank, silently truncating the
+    # hash to something no password could ever match. format: raw turns
+    # interpolation off for this file. A missing file stops the stack from
+    # starting, which is the right failure for the thing holding the door shut.
+    env_file:
+      - path: caddy.env
+        format: raw
 
   api:
     build: .
@@ -30,15 +39,11 @@ services:
     volumes:
       - ${DATA_DIR:-/data}:/data
     env_file: .env
-    # Only the worker gets the GPU; the API never loads a model.
-    # Comment this block out to run the whole stack on CPU.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # This file runs on CPU. Only the worker ever uses the GPU, and that
+    # reservation lives in docker-compose.gpu.yml so the base stack starts on a
+    # host with no nvidia runtime:
+    #   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+    # app/transcribe.py picks the device itself, so nothing else changes.
 
 volumes:
   caddy_data:

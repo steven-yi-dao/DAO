@@ -28,8 +28,12 @@ class ApiTestCase(unittest.TestCase):
         conn.close()
         self.client = TestClient(main.app)
 
-    def upload(self, name="clip.wav", body=b"fake audio bytes"):
-        return self.client.post("/api/jobs", files={"file": (name, io.BytesIO(body), "audio/wav")})
+    def upload(self, name="clip.wav", body=b"fake audio bytes", pipeline=None):
+        return self.client.post(
+            "/api/jobs",
+            files={"file": (name, io.BytesIO(body), "audio/wav")},
+            data={} if pipeline is None else {"pipeline": pipeline},
+        )
 
     def conn(self):
         return db.connect()
@@ -50,6 +54,7 @@ class TestUpload(ApiTestCase):
         self.assertEqual(body["fileName"], "clip.wav")
         self.assertEqual(body["sizeBytes"], len(b"fake audio bytes"))
         self.assertEqual(body["attempt"], 1)
+        self.assertEqual(body["pipeline"], "standard")
 
         stored = config.UPLOADS_DIR / body["jobId"] / "clip.wav"
         self.assertTrue(stored.exists())
@@ -60,6 +65,22 @@ class TestUpload(ApiTestCase):
         body = res.json()
         self.assertEqual(body["fileName"], "../my recording.wav")
         self.assertTrue((config.UPLOADS_DIR / body["jobId"] / "my_recording.wav").exists())
+
+    def test_bettertranscribe_is_recorded_on_the_row_the_worker_will_claim(self):
+        body = self.upload(pipeline="vad").json()
+        self.assertEqual(body["pipeline"], "vad")
+        conn = self.conn()
+        self.assertEqual(db.get(conn, body["jobId"])["pipeline"], "vad")
+        conn.close()
+
+    def test_rejects_an_unknown_pipeline_before_writing_anything(self):
+        res = self.upload(pipeline="quantum")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["message"], "Unknown pipeline.")
+        self.assertEqual(list(config.UPLOADS_DIR.glob("*/*")), [])
+        conn = self.conn()
+        self.assertEqual(len(db.list_recent(conn)), 0)
+        conn.close()
 
     def test_rejects_unsupported_extension(self):
         res = self.upload(name="notes.txt")

@@ -1,4 +1,4 @@
-import type { FileStatus, Segment, TranscriptFile } from '../types';
+import type { FileStatus, Pipeline, Segment, TranscriptFile } from '../types';
 
 /**
  * Client for the FastAPI service in `backend/`. Every route lives under /api;
@@ -16,6 +16,7 @@ export interface ApiJob {
   sizeBytes: number;
   durationSec: number | null;
   status: ApiStatus;
+  pipeline: Pipeline;
   attempt: number;
   language: string | null;
   segmentCount: number | null;
@@ -101,6 +102,10 @@ export function deleteJob(jobId: string): Promise<void> {
 export interface UploadOptions {
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
+  /** Which tool is doing the uploading. The server defaults to `standard`
+   *  when the field is absent, so omitting it is the pre-BetterTranscribe
+   *  behaviour rather than an error. */
+  pipeline?: Pipeline;
 }
 
 /**
@@ -112,6 +117,10 @@ export interface UploadOptions {
 export function createJob(file: File, options: UploadOptions = {}): Promise<ApiJob> {
   const form = new FormData();
   form.append('file', file, file.name);
+  // Appended on both paths below, not just the XHR one — the contract test
+  // drives the `fetch` fallback, and it is the suite that would catch this
+  // going missing.
+  form.append('pipeline', options.pipeline ?? 'standard');
 
   if (typeof XMLHttpRequest === 'undefined') {
     return request<ApiJob>('/jobs', { method: 'POST', body: form, signal: options.signal }).then((job) => {
@@ -193,6 +202,7 @@ export function mapJob(job: ApiJob): TranscriptFile {
     size: job.sizeBytes,
     duration: job.durationSec ?? 0,
     status: toFileStatus(job.status),
+    pipeline: job.pipeline ?? 'standard',
     progress: 100,
     errorMsg: job.errorMsg,
     date: formatJobDate(job.createdAt),

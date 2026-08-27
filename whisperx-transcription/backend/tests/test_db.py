@@ -14,8 +14,8 @@ class JobsTestCase(unittest.TestCase):
     def tearDown(self):
         self.conn.close()
 
-    def insert(self, job_id, name="a.wav", size=10):
-        return db.insert(self.conn, job_id, name, name, size)
+    def insert(self, job_id, name="a.wav", size=10, pipeline=db.PIPELINE_STANDARD):
+        return db.insert(self.conn, job_id, name, name, size, pipeline)
 
 
 class TestInsert(JobsTestCase):
@@ -32,8 +32,52 @@ class TestInsert(JobsTestCase):
         self.assertEqual(payload["fileName"], "Hello World.wav")
         self.assertEqual(payload["sizeBytes"], 4096)
         self.assertEqual(payload["status"], "QUEUED")
+        self.assertEqual(payload["pipeline"], db.PIPELINE_STANDARD)
         self.assertNotIn("model", payload)
         self.assertNotIn("diarize", payload)
+
+    def test_pipeline_defaults_to_standard_and_records_what_was_asked_for(self):
+        self.assertEqual(self.insert("j1")["pipeline"], db.PIPELINE_STANDARD)
+        self.assertEqual(self.insert("j2", pipeline=db.PIPELINE_VAD)["pipeline"], db.PIPELINE_VAD)
+
+
+class TestMigration(JobsTestCase):
+    """SCHEMA is CREATE TABLE IF NOT EXISTS, so it does nothing to a database
+    that already exists. Without _migrate the live /data/jobs.db would never
+    grow the pipeline column and every read of it would raise."""
+
+    def make_pre_pipeline_table(self):
+        self.conn.execute("DROP TABLE jobs")
+        self.conn.execute(
+            """CREATE TABLE jobs (
+              id TEXT PRIMARY KEY, file_name TEXT NOT NULL, stored_name TEXT NOT NULL,
+              size_bytes INTEGER NOT NULL, duration_sec REAL,
+              status TEXT NOT NULL CHECK (status IN ('QUEUED','RUNNING','DONE','ERROR')),
+              attempt INTEGER NOT NULL DEFAULT 1, language TEXT, segment_count INTEGER,
+              error_msg TEXT, audio_deleted INTEGER NOT NULL DEFAULT 0,
+              created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT
+            )"""
+        )
+        ts = db.now_iso()
+        self.conn.execute(
+            "INSERT INTO jobs (id, file_name, stored_name, size_bytes, status, created_at, updated_at)"
+            " VALUES ('old', 'old.wav', 'old.wav', 1, 'DONE', ?, ?)",
+            (ts, ts),
+        )
+
+    def test_an_existing_table_gains_the_column_and_old_rows_read_standard(self):
+        self.make_pre_pipeline_table()
+        db.init(self.conn)
+
+        row = db.get(self.conn, "old")
+        self.assertEqual(row["pipeline"], db.PIPELINE_STANDARD)
+        self.assertEqual(db.to_api(row)["pipeline"], db.PIPELINE_STANDARD)
+
+    def test_running_init_twice_is_harmless(self):
+        self.make_pre_pipeline_table()
+        db.init(self.conn)
+        db.init(self.conn)  # both processes call init() on startup
+        self.assertEqual(db.get(self.conn, "old")["pipeline"], db.PIPELINE_STANDARD)
 
 
 class TestClaim(JobsTestCase):

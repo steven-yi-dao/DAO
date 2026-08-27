@@ -10,6 +10,9 @@ interface ModalDialogProps {
   children: ReactNode;
   role?: 'dialog' | 'alertdialog';
   dismissOnBackdrop?: boolean;
+  /** Roomier and left-aligned, for reading rather than confirming. The default
+   *  320px centred box is sized for a two-button question. */
+  wide?: boolean;
 }
 
 export function ModalDialog({
@@ -19,6 +22,7 @@ export function ModalDialog({
   children,
   role = 'dialog',
   dismissOnBackdrop = true,
+  wide = false,
 }: ModalDialogProps) {
   const titleId = useId();
   const bodyId = useId();
@@ -28,7 +32,7 @@ export function ModalDialog({
     <div className="modal-overlay" onClick={dismissOnBackdrop ? onDismiss : undefined}>
       <div
         ref={ref}
-        className="modal"
+        className={wide ? 'modal modal--wide' : 'modal'}
         role={role}
         aria-modal="true"
         aria-labelledby={titleId}
@@ -38,7 +42,9 @@ export function ModalDialog({
         <h2 id={titleId} className="modal__title">
           {title}
         </h2>
-        <div id={bodyId}>{children}</div>
+        <div id={bodyId} className="modal__body">
+          {children}
+        </div>
         <div className="modal__actions">{actions}</div>
       </div>
     </div>

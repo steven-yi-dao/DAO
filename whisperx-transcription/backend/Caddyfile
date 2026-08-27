@@ -1,6 +1,18 @@
 {$DOMAIN} {
 	encode gzip
 
+	# One shared credential in front of everything, SPA and API alike. The API
+	# has no accounts and no owner column, so anyone who reaches it can list
+	# every job, read any transcript, and delete any of them. This is a door,
+	# not per-user separation.
+	#
+	# Covers /api/* too, which the browser handles for free: it caches the
+	# credential from the initial page challenge and attaches it to the SPA's
+	# same-origin polling and uploads without any client-side change.
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
 	# Must exceed the API's MAX_UPLOAD_BYTES, or Caddy rejects the upload before
 	# FastAPI can return its own "File too large" message.
 	request_body {

@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 import whisperx
 
-from . import config
+from . import config, vad
 
 log = logging.getLogger("whisperx.worker")
 
@@ -111,7 +111,10 @@ def _shape_words(words: list) -> list:
         shaped.append(
             {
                 "display": text + (" " if i < len(words) - 1 else ""),
-                "low": score is not None and score < LOW_CONFIDENCE,
+                # bool() is load-bearing: whisperx hands back numpy floats, so the
+                # comparison yields np.bool_ and `and` returns that object rather
+                # than a Python bool. json.dumps refuses it.
+                "low": bool(score is not None and score < LOW_CONFIDENCE),
             }
         )
     return shaped
@@ -130,13 +133,21 @@ def _shape_segments(segments: list) -> list:
     ]
 
 
-def run(job_id: str, audio_file: Path, log_file: Path) -> dict:
+def run(job_id: str, audio_file: Path, log_file: Path, pipeline: str = "standard") -> dict:
     """Transcribe one file. Returns the transcript payload; raises on failure
-    after recording why in the job log."""
+    after recording why in the job log.
+
+    `pipeline` selects what happens after alignment. "standard" is WhisperX on
+    its own; "vad" (BetterTranscribe) adds the silero-vad correction pass in
+    app/vad.py, which splits captions across pauses and snaps their boundaries
+    onto speech edges. The payload shape is identical either way."""
     t0 = time.time()
     with JobLog(log_file, job_id) as emit:
         try:
-            emit(f"start file={audio_file.name} model={config.MODEL_NAME} device={DEVICE}")
+            emit(
+                f"start file={audio_file.name} model={config.MODEL_NAME}"
+                f" device={DEVICE} pipeline={pipeline}"
+            )
             asr = load_model()
 
             audio = whisperx.load_audio(str(audio_file))
@@ -156,7 +167,20 @@ def run(job_id: str, audio_file: Path, log_file: Path) -> dict:
             )
             emit(f"align {time.time() - t:.1f}s")
 
-            segments = _shape_segments(result["segments"])
+            segments = result["segments"]
+            if pipeline == "vad":
+                # Runs on the raw aligned segments: _shape_segments drops the
+                # per-word timings that splitting needs, so it has to come last.
+                # A failure here costs the correction, not the transcript.
+                t = time.time()
+                try:
+                    regions = vad.speech_regions(audio, SAMPLE_RATE)
+                    segments = vad.correct_segments(segments, regions, emit)
+                except Exception as exc:
+                    emit(f"vad FAILED ({type(exc).__name__}: {exc}) - keeping whisperx boundaries")
+                emit(f"vad {time.time() - t:.1f}s")
+
+            segments = _shape_segments(segments)
             emit(f"DONE {len(segments)} segments, {duration}s audio, {time.time() - t0:.1f}s total")
 
             return {

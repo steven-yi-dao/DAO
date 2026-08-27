@@ -35,7 +35,7 @@ def process(conn, row) -> None:
         return
 
     try:
-        payload = transcribe.run(job_id, audio, log_file)
+        payload = transcribe.run(job_id, audio, log_file, row["pipeline"])
     except Exception as exc:
         db.finish_error(conn, job_id, f"{type(exc).__name__}: {exc}")
         log.exception("job %s failed", job_id)
@@ -49,7 +49,16 @@ def process(conn, row) -> None:
         segment_count=len(payload["segments"]),
         duration_sec=payload["durationSec"],
     )
-    log.info("job %s done (%d segments)", job_id, len(payload["segments"]))
+
+    # The product keeps transcripts, not source media. Drop the audio as soon as
+    # the transcript is on disk and the row is DONE, rather than holding it for
+    # the retention window. Only the success path does this: a job that ERRORed
+    # keeps its audio so retry has something to re-run, and the retention sweep
+    # remains the backstop for those.
+    storage.delete_audio(job_id)
+    db.mark_audio_deleted(conn, job_id)
+
+    log.info("job %s done (%d segments), source audio deleted", job_id, len(payload["segments"]))
 
 
 def sweep(conn) -> None:

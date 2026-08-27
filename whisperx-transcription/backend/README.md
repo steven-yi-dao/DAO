@@ -12,7 +12,9 @@ limitations](#accepted-limitations).
 
 ```
 backend/
-├── docker-compose.yml     caddy + api + worker
+├── docker-compose.yml     caddy + api + worker (CPU)
+├── docker-compose.gpu.yml GPU overlay for the worker
+├── deploy/user-data.sh    first-boot bootstrap
 ├── Caddyfile              TLS, SPA, /api reverse proxy
 ├── Dockerfile             one image for both Python services
 ├── requirements.txt
@@ -46,8 +48,13 @@ Job states are exactly `QUEUED`, `RUNNING`, `DONE`, `ERROR`.
 ## Product configuration
 
 Fixed, not per-job: Whisper **medium**, automatic language detection, word
-alignment on, **diarization off**, one job at a time, seven-day deletion of
-source audio, an `attempt` counter for explicit retries.
+alignment on, **diarization off**, one job at a time, an `attempt` counter for
+explicit retries, and **source audio deleted as soon as the transcript is
+written**. The product keeps transcripts, not source media.
+
+A job that ERRORs keeps its audio, otherwise retry would have nothing to re-run.
+`RETENTION_DAYS` still sweeps those after seven days, so it is now a backstop
+for failed jobs rather than the main deletion path.
 
 Dropping diarization is what removes pyannote, the Hugging Face token, Secrets
 Manager, and a large amount of GPU memory pressure.
@@ -73,7 +80,6 @@ Runs on CPU — no GPU needed to exercise the whole pipeline, just slower.
 
 ```bash
 cp .env.example .env          # set DOMAIN=localhost, DATA_DIR=./data
-# comment out the worker's deploy.resources block in docker-compose.yml
 docker compose up --build
 ```
 
@@ -114,25 +120,160 @@ field for field. No GPU and no torch: `app/main.py` never imports `transcribe`.
 One-time manual setup. Everything here is a handful of console or CLI steps;
 there is no CloudFormation stack to drift.
 
+**Before anything else: GPU quota.** A new account has a
+`Running On-Demand G and VT instances` quota of **0**, and a `g4dn.xlarge`
+needs 4 vCPUs of it. The launch fails with `VcpuLimitExceeded` until AWS
+approves an increase, and the request is reviewed by a human.
+
+```bash
+aws service-quotas request-service-quota-increase \
+  --service-code ec2 --quota-code L-DB2E81BA --desired-value 4
+aws service-quotas list-requested-service-quota-change-history-by-quota \
+  --service-code ec2 --quota-code L-DB2E81BA \
+  --query 'RequestedQuotas[0].[Status,DesiredValue]' --output text
+```
+
+`CASE_CLOSED` is the terminal state for **both** outcomes. Do not read it as a
+denial, and do not read the applied value straight after the case closes: an
+approval says the new quota "will take effect in 30 minutes", so the value
+still reports the old one for a while. Check the case correspondence for the
+verdict, and re-read the applied value later:
+
+```bash
+aws service-quotas get-service-quota --service-code ec2 \
+  --quota-code L-DB2E81BA --query 'Quota.Value' --output text
+```
+
+This account was approved 19 minutes after filing.
+
+The stack also runs fine without a GPU — see [Running without a
+GPU](#running-without-a-gpu).
+
 1. **Instance** — launch a `g4dn.xlarge` (one NVIDIA T4, 16 GiB GPU memory)
-   with a GPU-ready AMI (Deep Learning AMI, or Ubuntu plus the NVIDIA driver
-   and `nvidia-container-toolkit`). Root volume 50 GiB gp3.
-2. **Data volume** — create an encrypted gp3 EBS volume (start at 200 GiB),
-   attach it, and set **DeleteOnTermination = false**. Format once
-   (`mkfs.ext4`), then add it to `/etc/fstab` by UUID mounted at `/data` so it
-   survives reboots.
+   from the Deep Learning Base OSS Nvidia Driver AMI (Ubuntu 22.04), which
+   carries the driver, Docker, and `nvidia-container-toolkit` already. Resolve
+   it rather than hardcoding an ID, since it is rebuilt often:
+
+   ```bash
+   aws ssm get-parameter --query Parameter.Value --output text \
+     --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id
+   ```
+
+   Its snapshot is 75 GiB, so the root volume cannot be smaller than that, but
+   **use 150 GiB**. The torch 2.8 base image plus the two built images do not
+   fit in 75 GiB: the first attempt filled the disk to 97% mid-pull and killed
+   the build.
+2. **Data volume** — an encrypted gp3 EBS volume in the *same AZ* as the
+   instance, with **DeleteOnTermination = false**. 50 GiB is ample: source audio
+   is deleted as soon as its transcript is written, so the standing content is
+   the ~1.5 GiB model cache plus transcripts, which are tiny. gp3 grows online,
+   so start small.
+   `deploy/user-data.sh` formats and mounts it at `/data`.
 3. **Security group** — inbound `443` (and `80`, which Caddy needs for the ACME
    HTTP challenge and the redirect) from `0.0.0.0/0`. **No SSH rule.**
 4. **Elastic IP** — allocate and associate, so the address survives a stop/start.
-5. **DNS** — a Route 53 A record pointing at the Elastic IP. It must resolve
-   *before* the first `docker compose up`, or Caddy's certificate request fails.
+5. **DNS** — see [TLS without a domain](#tls-without-a-domain). The name must
+   resolve *before* the first `docker compose up`, or Caddy's certificate
+   request fails.
 6. **IAM** — an instance profile with `AmazonSSMManagedInstanceCore` and nothing
    else. Shell access is via Session Manager (`aws ssm start-session`), not SSH.
 
 No S3 bucket, no ECR repository, no Cognito user pool. S3 is worth adding later
 for off-instance backup of `/data`, but it is not part of the live job flow.
 
-## Deploying
+### TLS without a domain
+
+Caddy provisions a real certificate automatically, but Let's Encrypt needs a
+hostname it is willing to sign. The instance's free
+`ec2-<ip>.us-east-2.compute.amazonaws.com` name **will not work**: the whole
+`compute.amazonaws.com` space is refused by Let's Encrypt policy, and the ACME
+order fails.
+
+Where no domain is owned, use [sslip.io](https://sslip.io), a wildcard DNS
+service that resolves `3-23-151-46.sslip.io` to `3.23.151.46`. Let's Encrypt
+issues for it over the HTTP-01 challenge, so `DOMAIN` is the only thing that
+changes:
+
+```
+DOMAIN=<elastic-ip-with-dashes>.sslip.io
+```
+
+The Let's Encrypt rate limit is shared across every sslip.io user and is
+occasionally exhausted. `nip.io` resolves identically and is the fallback.
+
+CloudFront would also supply a free `*.cloudfront.net` name with a valid
+managed certificate, but its origin response timeout caps at 60s (180s with a
+quota increase) while FastAPI only responds once a full 500 MB upload has
+landed. It is the wrong shape for this API.
+
+### Running without a GPU
+
+`docker-compose.yml` has no GPU reservation in it; `docker-compose.gpu.yml`
+adds one. So the base stack starts on any host, and the GPU is layered on where
+one exists:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d --build
+```
+
+`deploy/user-data.sh` picks between the two by testing `nvidia-smi`, so the same
+bootstrap serves a CPU instance and a `g4dn` with no edit. No application change
+is involved either way: `app/transcribe.py` sets `DEVICE` from
+`torch.cuda.is_available()` and drops from `float16` to `int8` compute on CPU.
+
+The overlay is additive on purpose. Compose merge semantics for *removing* a key
+in an override file are murky, while adding one is well defined, so the GPU is
+the thing that gets added rather than the thing that gets subtracted.
+
+Transcription on CPU is far slower than on a T4 and is meant for validating the
+pipeline, not for serving real load. Stop the instance when it is not in use;
+compute billing stops while `/data` and the Elastic IP persist.
+
+### Resources in account 400854831334 (us-east-2)
+
+| Resource | ID |
+|---|---|
+| Security group | `sg-06edbbd2d98049a7d` (`whisperx-web-sg`) |
+| Instance profile | `whisperx-instance-profile` |
+| Elastic IP | `eipalloc-00b9257d874c53707` — `3.23.151.46` |
+| Data volume | `vol-0ef218b5a0a98f279` — 50 GiB, encrypted, us-east-2a |
+| Hostname | `3-23-151-46.sslip.io` |
+
+## First launch
+
+`deploy/user-data.sh` does the whole first boot: it finds the data volume by
+its serial (never by device name — the instance store is an NVMe device too,
+and guessing could format the wrong disk), makes a filesystem only if the disk
+is blank, mounts it at `/data` by UUID, installs Node, checks the repo out,
+builds the SPA, writes `.env`, and brings the stack up. Every step is guarded,
+so re-running it is safe.
+
+```bash
+aws ec2 run-instances \
+  --image-id "$(aws ssm get-parameter --query Parameter.Value --output text \
+    --name /aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id)" \
+  --instance-type g4dn.xlarge \
+  --subnet-id subnet-089b011b1aa283a0d \
+  --security-group-ids sg-06edbbd2d98049a7d \
+  --iam-instance-profile Name=whisperx-instance-profile \
+  --metadata-options HttpTokens=required \
+  --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=75,VolumeType=gp3,Encrypted=true}' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=whisperx}]' \
+  --user-data file://deploy/user-data.sh
+
+# Then attach the data volume and the Elastic IP to the new instance:
+aws ec2 attach-volume --volume-id vol-0ef218b5a0a98f279 \
+  --instance-id i-xxxxxxxx --device /dev/sdf
+aws ec2 modify-instance-attribute --instance-id i-xxxxxxxx \
+  --block-device-mappings 'DeviceName=/dev/sdf,Ebs={DeleteOnTermination=false}'
+aws ec2 associate-address --instance-id i-xxxxxxxx \
+  --allocation-id eipalloc-00b9257d874c53707
+```
+
+The bootstrap waits for the volume, so attaching it after launch is fine.
+Watch it with `tail -f /var/log/whisperx-bootstrap.log`.
+
+## Redeploying
 
 ```bash
 aws ssm start-session --target i-xxxxxxxx
@@ -145,6 +286,7 @@ npm ci && npm run build             # Caddy serves ../dist
 
 cd backend
 cp .env.example .env                # set DOMAIN to the Route 53 name
+cp /data/caddy.env caddy.env        # basic-auth credential, see Access control
 docker compose up -d --build
 ```
 
@@ -160,6 +302,41 @@ curl -s https://$DOMAIN/api/health
 
 The first start downloads the Whisper medium weights into `/data/models`, which
 takes a few minutes. Subsequent restarts reuse the cache.
+
+## Access control
+
+Caddy puts HTTP basic auth in front of the whole site, SPA and API together. One
+shared credential, no accounts. The browser caches it from the initial page
+challenge and attaches it to the SPA's polling and uploads on its own, so
+nothing in `src/` knows this exists.
+
+This is a door, not authorization. The API still has no owner column, so
+everyone who gets through sees and can delete everyone else's jobs — and since
+source audio is deleted once a transcript is written, a deleted transcript is
+gone. Per-user separation means campus SSO plus an owner column, and neither
+exists yet.
+
+The credential lives at **`/data/caddy.env`** on the encrypted volume, alongside
+the database, so it survives instance replacement. `user-data.sh` copies it to
+`backend/caddy.env` at boot, and `docker-compose.yml` reads it from there. It is
+deliberately not in `.env`: bcrypt hashes contain `$`, and compose interpolates
+the project `.env`, which would corrupt it.
+
+To change the password:
+
+```bash
+docker run --rm caddy:2-alpine caddy hash-password --plaintext 'new-password'
+
+sudo vi /data/caddy.env             # paste the hash into BASIC_AUTH_HASH
+sudo cp /data/caddy.env /opt/whisperx/whisperx-transcription/backend/caddy.env
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d caddy
+```
+
+Two deliberate failure modes. If `caddy.env` is missing the stack refuses to
+start, rather than coming up open. And if `/data/caddy.env` is absent at boot —
+a brand new volume — `user-data.sh` mints a random password and prints it once
+to the bootstrap log (`/var/log/user-data.log`); only the hash is kept, so
+recover it by setting a new one.
 
 ## Operations
 

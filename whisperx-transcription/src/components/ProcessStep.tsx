@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 import type { TranscriptFile } from '../types';
 import { formatBytes } from '../lib/utils';
+import { PipelineChip } from './PipelineChip';
 import { StatusBadge } from './StatusBadge';
 import { WaveIcon } from './WaveIcon';
 import './ProcessStep.css';
@@ -42,7 +43,9 @@ export function ProcessStep({
               <li key={file.id} className="process__done-row">
                 <div className="process__row-main">
                   <div className="file-name">{file.name}</div>
-                  <div className="file-meta">{formatBytes(file.size)}</div>
+                  <div className="file-meta">
+                    {formatBytes(file.size)} <PipelineChip pipeline={file.pipeline} />
+                  </div>
                 </div>
                 <StatusBadge status="done" />
               </li>
@@ -73,7 +76,9 @@ export function ProcessStep({
                       </div>
                       <div className="process__row-main">
                         <div className="file-name">{file.name}</div>
-                        <div className="file-meta">{formatBytes(file.size)}</div>
+                        <div className="file-meta">
+                          {formatBytes(file.size)} <PipelineChip pipeline={file.pipeline} />
+                        </div>
                       </div>
                       {uploading && <StatusBadge status="uploading" />}
                       {processing && <StatusBadge status="processing" />}

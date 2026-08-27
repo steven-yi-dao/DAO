@@ -35,6 +35,7 @@ const JOB_KEYS = [
   'sizeBytes',
   'durationSec',
   'status',
+  'pipeline',
   'attempt',
   'language',
   'segmentCount',
@@ -104,6 +105,24 @@ describe('POST /api/jobs', () => {
     expect(file.status).toBe('queued');
     expect(file.duration).toBe(0);
     expect(file.date).not.toBe('');
+  });
+
+  it('defaults to the standard pipeline when the client does not ask for one', () => {
+    expect(job.pipeline).toBe('standard');
+  });
+
+  it('records BetterTranscribe on the row the worker will claim', async () => {
+    const vad = await createJob(audio('contract-vad.wav'), { pipeline: 'vad' });
+    expect(vad.pipeline).toBe('vad');
+    expect((await getJob(vad.jobId)).pipeline).toBe('vad');
+  });
+
+  it('rejects a pipeline it does not implement rather than silently running standard', async () => {
+    await expectApiError(
+      createJob(audio('contract-bogus.wav'), { pipeline: 'quantum' as never }),
+      400,
+      'Unknown pipeline.',
+    );
   });
 
   it('rejects an unsupported format with the message the upload step shows', async () => {

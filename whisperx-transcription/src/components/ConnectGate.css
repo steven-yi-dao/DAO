@@ -18,6 +18,12 @@
   margin: 0 0 var(--space-5);
 }
 
+.connect-gate__heading--section {
+  font-size: 15px;
+  color: var(--color-text-muted);
+  margin: var(--space-6) 0 var(--space-3);
+}
+
 .connect-gate__card {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -25,12 +31,33 @@
   overflow: hidden;
 }
 
+/* The row is a div holding two sibling buttons — the launch target and the (i).
+   A button inside a button is invalid HTML, so the hover fill and the padding
+   that used to live on `.tool` now live on `.tool__launch`. */
 .tool {
-  width: 100%;
+  display: flex;
+  align-items: stretch;
+  /* The positioning context for the arrow and the (i). Both are pulled out of
+     flow so their order on screen is independent of the DOM: the (i) has to be
+     a sibling of the launch button (a button cannot nest inside another), but
+     it reads to the *left* of the arrow, which lives inside it. */
+  position: relative;
+  transition: background var(--transition-fast);
+}
+
+.tool + .tool {
+  border-top: 1px solid var(--color-border);
+}
+
+.tool__launch {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding: 18px 20px;
+  /* Right padding reserves the lane both absolutely-positioned controls sit in,
+     so a long description wraps instead of running under them. */
+  padding: 18px 88px 18px 20px;
   background: transparent;
   border: none;
   appearance: none;
@@ -41,12 +68,57 @@
   transition: background var(--transition-fast);
 }
 
-.tool:hover:not(:disabled) {
+.tool__launch:hover:not(:disabled) {
   background: var(--color-surface-subtle);
 }
 
-.tool:disabled {
+/* The row should light up as one piece, the way it did before the (i) split it
+   in two — a fill that stops at the (i) leaves a hard seam down the card. The
+   rule above is the fallback for engines without :has(), where the launch area
+   highlighting alone still beats no hover feedback at all. */
+@supports selector(:has(*)) {
+  .tool__launch:hover:not(:disabled) {
+    background: transparent;
+  }
+
+  .tool:has(.tool__launch:hover:not(:disabled)) {
+    background: var(--color-surface-subtle);
+  }
+}
+
+.tool__launch:disabled {
   cursor: default;
+}
+
+/* The card clips overflow, so the global 3px-offset focus ring would be sliced
+   off wherever a row meets the card edge. Drawn inside instead. */
+.tool__launch:focus-visible,
+.tool__info:focus-visible {
+  outline-offset: -3px;
+  border-radius: var(--radius-md);
+}
+
+.tool__info {
+  position: absolute;
+  top: 50%;
+  right: 52px;
+  transform: translateY(-50%);
+  /* Above the launch button, so the (i) takes its own clicks. */
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding: 6px;
+  background: transparent;
+  border: none;
+  appearance: none;
+  -webkit-appearance: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.tool__info:hover {
+  color: var(--color-brand);
 }
 
 .tool__icon {
@@ -102,7 +174,10 @@
 }
 
 .tool__aside {
-  flex: none;
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
   width: 30px;
   display: flex;
   justify-content: center;
@@ -122,7 +197,7 @@
   transition: color var(--transition-fast), transform var(--transition-fast);
 }
 
-.tool:hover:not(:disabled) .tool__arrow {
+.tool__launch:hover:not(:disabled) .tool__arrow {
   color: var(--color-brand);
   transform: translateX(2px);
 }

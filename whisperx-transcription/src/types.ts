@@ -5,6 +5,13 @@
  */
 export type FileStatus = 'selected' | 'uploading' | 'queued' | 'processing' | 'done' | 'error';
 
+/**
+ * Which post-alignment treatment produced (or will produce) a transcript.
+ * `standard` is WhisperX on its own; `vad` is BetterTranscribe, the
+ * experimental silero-vad boundary correction. Mirrors `db.PIPELINES`.
+ */
+export type Pipeline = 'standard' | 'vad';
+
 export interface Word {
   display: string;
   low: boolean;
@@ -28,6 +35,9 @@ export interface TranscriptFile {
   size: number;
   duration: number;
   status: FileStatus;
+  /** Which tool this file was sent to. Staged rows carry the tool the session
+   *  was opened with, so the queue can label a file before it has a job id. */
+  pipeline: Pipeline;
   /** Upload percentage only. Once the server has the file there is nothing
    *  finer than the status to report, so this stays at 100. */
   progress: number;

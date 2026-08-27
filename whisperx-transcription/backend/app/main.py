@@ -10,7 +10,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -70,9 +70,17 @@ def health():
 
 
 @app.post("/api/jobs", status_code=201)
-async def create_job(file: UploadFile = File(...), conn=Depends(get_conn)):
+async def create_job(
+    file: UploadFile = File(...),
+    pipeline: str = Form(db.PIPELINE_STANDARD),
+    conn=Depends(get_conn),
+):
+    # Both rejections happen before a single byte is streamed, so a bad request
+    # never leaves anything behind under /data.
     if not storage.is_allowed(file.filename or ""):
         raise HTTPException(status_code=400, detail=storage.UNSUPPORTED_FORMAT)
+    if pipeline not in db.PIPELINES:
+        raise HTTPException(status_code=400, detail="Unknown pipeline.")
 
     job_id = str(uuid.uuid4())
     stored_name = storage.safe_name(file.filename or "")
@@ -96,13 +104,13 @@ async def create_job(file: UploadFile = File(...), conn=Depends(get_conn)):
 
     try:
         storage.finalize(tmp, job_id, stored_name)
-        row = db.insert(conn, job_id, file.filename or stored_name, stored_name, size)
+        row = db.insert(conn, job_id, file.filename or stored_name, stored_name, size, pipeline)
     except Exception:
         storage.delete_audio(job_id)
         tmp.unlink(missing_ok=True)
         raise
 
-    log.info("queued job %s (%s, %d bytes)", job_id, stored_name, size)
+    log.info("queued job %s (%s, %d bytes, pipeline=%s)", job_id, stored_name, size, pipeline)
     return db.to_api(row)
 
 

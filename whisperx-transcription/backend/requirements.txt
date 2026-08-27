@@ -1,13 +1,30 @@
-# whisperx / faster-whisper / ctranslate2 are tightly coupled and are the most
-# common source of breakage — do not bump one without re-testing the set on the
-# exact base image.
-whisperx==3.1.5
-faster-whisper==1.0.3
-ctranslate2==4.4.0
+# Let whisperx pick its own faster-whisper, ctranslate2, pyannote-audio, and av.
+# Pinning those separately is what produced an unbuildable set: whisperx 3.1.x
+# force-pins faster-whisper==1.0.1, which pins av==11.*, and av 11.0.0 is the
+# only 11.x release and ships no wheels at all. Every escape from that was
+# blocked -- faster-whisper 1.0.2 added a required `hotwords` field that
+# whisperx 3.1.x does not pass, so the one version with a wheel-friendly av
+# range could not be used.
+#
+# Bumping any one of these still needs the whole set re-tested on the exact base
+# image. The set is coupled; the fix was to stop pretending otherwise.
+whisperx==3.8.6
+
+# BetterTranscribe's boundary correction. The pip package over
+# torch.hub.load('snakers4/silero-vad'): the wheel bundles the weights, so there
+# is no runtime network fetch and nothing extra to manage under /data/models.
+# Declares torch>=1.12.0 and torchaudio>=0.12.0 with no upper bound, so it does
+# not drag torch off the 2.8.x the base image pins. It also pulls onnxruntime
+# unconditionally at this version, which is what grew the image; 6.x moves that
+# to an extra but changes VAD defaults, so it is not a free bump. It joins the
+# coupled set above: re-test the whole set on the exact base image before
+# bumping, and re-confirm torch is still 2.8.x afterwards.
+silero-vad==5.1.2
 
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 
-# torch and torchaudio come from the base image.
-# pyannote.audio is intentionally absent: diarization is not supported.
+# torch and torchaudio come from the base image, which must stay on 2.8.x:
+# whisperx requires torch~=2.8.0. It also requires ctranslate2>=4.5.0, which
+# needs cuDNN 9, so the base image tag must stay a cudnn9 one.
