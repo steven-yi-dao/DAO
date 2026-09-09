@@ -25,6 +25,7 @@ SEGMENTS = [
         "end": 3.5,
         "speaker": None,
         "text": "Thanks for coming in.",
+        "lines": ["Thanks for coming in."],
         "words": [
             {"display": "Thanks ", "low": False},
             {"display": "for ", "low": False},
@@ -37,6 +38,7 @@ SEGMENTS = [
         "end": 7.25,
         "speaker": None,
         "text": "Your accommodations are already on file.",
+        "lines": ["Your accommodations", "are already on file."],
         "words": [
             {"display": "Your ", "low": False},
             {"display": "accommodations ", "low": True},

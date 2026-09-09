@@ -23,6 +23,11 @@ export interface Segment {
   speaker: string | null;
   text: string;
   words: Word[];
+  /** The caption already broken to the house format — at most
+   *  `CAPTION_MAX_LINES` lines of `CAPTION_MAX_LINE_CHARS` characters — by the
+   *  backend's `captions.py`. Null on the standard pipeline, which does no
+   *  formatting, so anything rendering a caption has to handle its absence. */
+  lines?: string[] | null;
 }
 
 export interface TranscriptFile {

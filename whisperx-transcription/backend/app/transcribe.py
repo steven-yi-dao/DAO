@@ -20,7 +20,7 @@ from pathlib import Path
 import torch
 import whisperx
 
-from . import config, vad
+from . import captions, config, vad
 
 log = logging.getLogger("whisperx.worker")
 
@@ -128,6 +128,9 @@ def _shape_segments(segments: list) -> list:
             "speaker": seg.get("speaker"),
             "text": str(seg.get("text", "")).strip(),
             "words": _shape_words(seg.get("words") or []),
+            # The caption exactly as it should be written, when a pass produced
+            # one. None on the standard pipeline, which does no formatting.
+            "lines": seg.get("lines"),
         }
         for seg in segments
     ]
@@ -140,7 +143,9 @@ def run(job_id: str, audio_file: Path, log_file: Path, pipeline: str = "standard
     `pipeline` selects what happens after alignment. "standard" is WhisperX on
     its own; "vad" (BetterTranscribe) adds the silero-vad correction pass in
     app/vad.py, which splits captions across pauses and snaps their boundaries
-    onto speech edges. The payload shape is identical either way."""
+    onto speech edges, then the caption fitting pass in app/captions.py, which
+    reformats them to the house line budget. The payload shape is identical
+    either way — standard captions simply come back with `lines` unset."""
     t0 = time.time()
     with JobLog(log_file, job_id) as emit:
         try:
@@ -169,9 +174,10 @@ def run(job_id: str, audio_file: Path, log_file: Path, pipeline: str = "standard
 
             segments = result["segments"]
             if pipeline == "vad":
-                # Runs on the raw aligned segments: _shape_segments drops the
-                # per-word timings that splitting needs, so it has to come last.
-                # A failure here costs the correction, not the transcript.
+                # Both passes run on the raw aligned segments: _shape_segments
+                # drops the per-word timings that splitting needs, so they have
+                # to come first. A failure in either costs that pass, not the
+                # transcript, and they fail independently.
                 t = time.time()
                 try:
                     regions = vad.speech_regions(audio, SAMPLE_RATE)
@@ -179,6 +185,16 @@ def run(job_id: str, audio_file: Path, log_file: Path, pipeline: str = "standard
                 except Exception as exc:
                     emit(f"vad FAILED ({type(exc).__name__}: {exc}) - keeping whisperx boundaries")
                 emit(f"vad {time.time() - t:.1f}s")
+
+                # Caption fitting comes after the correction, so it subdivides
+                # boundaries VAD has already placed well rather than competing
+                # with it for where a caption should end.
+                t = time.time()
+                try:
+                    segments = captions.fit_segments(segments, emit)
+                except Exception as exc:
+                    emit(f"caption fit FAILED ({type(exc).__name__}: {exc}) - keeping long captions")
+                emit(f"caption fit {time.time() - t:.1f}s")
 
             segments = _shape_segments(segments)
             emit(f"DONE {len(segments)} segments, {duration}s audio, {time.time() - t0:.1f}s total")

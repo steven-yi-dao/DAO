@@ -62,6 +62,10 @@ export function buildTxt(file: TranscriptFile): string {
 export function buildSrt(file: TranscriptFile): string {
   return (file.segments ?? [])
     .map((s, i) => {
+      // The backend already broke the caption to the house format when the tool
+      // does that. Falling back to the flat text is the standard pipeline, which
+      // does not, and which is why this is not simply `s.lines.join`.
+      const body = s.lines?.length ? s.lines.join('\n') : s.text;
       return (
         i +
         1 +
@@ -71,7 +75,7 @@ export function buildSrt(file: TranscriptFile): string {
         formatSrtTime(s.end) +
         '\n' +
         (s.speaker ? '[' + s.speaker + '] ' : '') +
-        s.text +
+        body +
         '\n'
       );
     })

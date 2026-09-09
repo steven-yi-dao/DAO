@@ -176,7 +176,7 @@ describe('GET /api/jobs/{id}/transcript', () => {
     expect(transcript.segments.length).toBeGreaterThan(0);
 
     const segment = transcript.segments[0];
-    expect(Object.keys(segment).sort()).toEqual(['end', 'speaker', 'start', 'text', 'words']);
+    expect(Object.keys(segment).sort()).toEqual(['end', 'lines', 'speaker', 'start', 'text', 'words']);
     expect(typeof segment.start).toBe('number');
     expect(typeof segment.end).toBe('number');
     expect(typeof segment.text).toBe('string');

@@ -50,6 +50,15 @@ VAD_GAP_SPEECH_TOLERANCE_S = float(os.environ.get("VAD_GAP_SPEECH_TOLERANCE_S", 
 # original boundaries are kept. Nothing is ever dropped.
 VAD_MIN_SEGMENT_S = float(os.environ.get("VAD_MIN_SEGMENT_S", 0.20))
 
+# The house caption format, applied by app/captions.py. These two are the format
+# itself rather than a tuning guess: employees were splitting every caption by
+# hand to reach them.
+CAPTION_MAX_LINE_CHARS = int(os.environ.get("CAPTION_MAX_LINE_CHARS", 24))
+CAPTION_MAX_LINES = int(os.environ.get("CAPTION_MAX_LINES", 2))
+# A gap between words at least this long counts as a natural break, and beats a
+# merely well-balanced one when choosing where to split a caption.
+CAPTION_MIN_PAUSE_S = float(os.environ.get("CAPTION_MIN_PAUSE_S", 0.25))
+
 
 def ensure_dirs() -> None:
     for d in (UPLOADS_DIR, TMP_DIR, TRANSCRIPTS_DIR, LOGS_DIR, MODELS_DIR):
