@@ -69,7 +69,7 @@ command -v git >/dev/null 2>&1 || { apt-get update; apt-get install -y git; }
 
 # The SPA is built on the host; Caddy serves the resulting dist/ directory.
 if ! command -v node >/dev/null 2>&1; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
   apt-get install -y nodejs
 fi
 
