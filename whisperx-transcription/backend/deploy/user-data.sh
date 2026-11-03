@@ -10,7 +10,7 @@ set -euxo pipefail
 DATA_VOLUME_ID=vol-0ef218b5a0a98f279
 DOMAIN=3-23-151-46.sslip.io
 REPO=https://github.com/steven-yi-dao/DAO.git
-BRANCH=backend/ec2-whisperx
+BRANCH=master
 CHECKOUT=/opt/whisperx
 
 exec > >(tee -a /var/log/whisperx-bootstrap.log) 2>&1
