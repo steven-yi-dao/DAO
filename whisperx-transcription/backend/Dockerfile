@@ -12,8 +12,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Runtime only. No toolchain or FFmpeg headers are needed: requirements.txt
 # pins av to a version that ships a manylinux wheel, so nothing is compiled.
+# libbrotli1 is named so apt upgrades the base image's copy to the
+# jammy-security build that fixes CVE-2026-111497 (1.0.9-2ubuntu0.1 or later).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg libsndfile1 \
+ && apt-get install -y --no-install-recommends ffmpeg libsndfile1 libbrotli1 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv

@@ -23,7 +23,11 @@ silero-vad==5.1.2
 
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
-python-multipart==0.0.20
+python-multipart==0.0.31
+
+# Not imported by the app; something in the image pulls it in. Pinned past
+# CVE-2026-111497 (Brotli decoder out-of-bounds write), fixed in 1.2.1.
+brotli==1.2.1
 
 # torch and torchaudio come from the base image, which must stay on 2.8.x:
 # whisperx requires torch~=2.8.0. It also requires ctranslate2>=4.5.0, which
