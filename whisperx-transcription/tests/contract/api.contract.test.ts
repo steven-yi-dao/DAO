@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { ApiJob } from '../../src/lib/api';
+import { UNSUPPORTED_FORMAT_MESSAGE } from '../../src/lib/utils';
 import {
   ApiError,
   createJob,
@@ -129,7 +130,7 @@ describe('POST /api/jobs', () => {
     await expectApiError(
       createJob(audio('notes.txt')),
       400,
-      'Unsupported format — try MP3, WAV, M4A, FLAC, or OGG.',
+      UNSUPPORTED_FORMAT_MESSAGE,
     );
   });
 
