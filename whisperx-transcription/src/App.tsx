@@ -3,6 +3,7 @@ import type { FileSource, FlowStep, NavTab, Pipeline, Segment, SessionState, Tra
 import {
   ALLOWED_EXTENSIONS,
   MAX_BYTES,
+  UNSUPPORTED_FORMAT_MESSAGE,
   buildJson,
   buildSrt,
   buildTxt,
@@ -145,7 +146,7 @@ export default function App() {
       const id = nextId('f');
       const base = { id, jobId: null, name: f.name, size: f.size, duration: 0, progress: 0, pipeline };
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        return { ...base, status: 'error' as const, errorMsg: 'Unsupported format — try MP3, WAV, M4A, FLAC, or OGG.' };
+        return { ...base, status: 'error' as const, errorMsg: UNSUPPORTED_FORMAT_MESSAGE };
       }
       if (f.size > MAX_BYTES) {
         return { ...base, status: 'error' as const, errorMsg: 'File too large — 500MB max.' };

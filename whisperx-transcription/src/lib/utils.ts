@@ -3,6 +3,21 @@ import type { TranscriptFile } from '../types';
 export const ALLOWED_EXTENSIONS = ['mp3', 'wav', 'm4a', 'flac', 'ogg', 'mp4', 'aac'];
 export const MAX_BYTES = 500 * 1024 * 1024;
 
+/** "MP3, WAV, …, AAC" — the one human-readable form of ALLOWED_EXTENSIONS, so
+ *  the visible hint, the screen-reader description and the rejection message
+ *  can't drift from what is actually accepted. */
+export const SUPPORTED_FORMATS_TEXT = ALLOWED_EXTENSIONS.map((e) => e.toUpperCase()).join(', ');
+
+/** The file input's `accept` filter. Listed by extension rather than `audio/*`,
+ *  which makes some pickers grey out .mp4 (a video type) even though it's allowed. */
+export const ACCEPT_ATTRIBUTE = ALLOWED_EXTENSIONS.map((e) => '.' + e).join(',');
+
+/** Must match UNSUPPORTED_FORMAT in backend/app/storage.py word for word. */
+export const UNSUPPORTED_FORMAT_MESSAGE = (() => {
+  const names = ALLOWED_EXTENSIONS.map((e) => e.toUpperCase());
+  return `Unsupported format — try ${names.slice(0, -1).join(', ')}, or ${names[names.length - 1]}.`;
+})();
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   return Math.round(bytes / 1024) + ' KB';

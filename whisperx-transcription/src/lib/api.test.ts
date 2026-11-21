@@ -278,10 +278,10 @@ describe('createJob', () => {
   it('surfaces the format rejection the API sends', async () => {
     const xhr = useFakeXhr();
     const promise = createJob(file);
-    xhr().respond(400, JSON.stringify({ message: 'Unsupported format — try MP3, WAV, M4A, FLAC, or OGG.' }));
+    xhr().respond(400, JSON.stringify({ message: 'Unsupported format — try MP3, WAV, M4A, FLAC, OGG, MP4, or AAC.' }));
     await expect(promise).rejects.toMatchObject({
       status: 400,
-      message: 'Unsupported format — try MP3, WAV, M4A, FLAC, or OGG.',
+      message: 'Unsupported format — try MP3, WAV, M4A, FLAC, OGG, MP4, or AAC.',
     });
   });
 

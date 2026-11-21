@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Segment, TranscriptFile } from '../types';
-import { buildSrt, formatSrtTime } from './utils';
+import backendStorage from '../../backend/app/storage.py?raw';
+import {
+  ALLOWED_EXTENSIONS,
+  SUPPORTED_FORMATS_TEXT,
+  UNSUPPORTED_FORMAT_MESSAGE,
+  buildSrt,
+  formatSrtTime,
+} from './utils';
 
 function file(segments: Segment[]): TranscriptFile {
   return {
@@ -64,5 +71,18 @@ describe('formatSrtTime', () => {
   it('writes hours, minutes, seconds and milliseconds', () => {
     expect(formatSrtTime(0)).toBe('00:00:00,000');
     expect(formatSrtTime(3661.5)).toBe('01:01:01,500');
+  });
+});
+
+describe('supported-format copy', () => {
+  it('names every allowed extension in the hint and the rejection message', () => {
+    for (const ext of ALLOWED_EXTENSIONS) {
+      expect(SUPPORTED_FORMATS_TEXT).toContain(ext.toUpperCase());
+      expect(UNSUPPORTED_FORMAT_MESSAGE).toContain(ext.toUpperCase());
+    }
+  });
+
+  it('matches the backend message word for word', () => {
+    expect(backendStorage).toContain(`UNSUPPORTED_FORMAT = "${UNSUPPORTED_FORMAT_MESSAGE}"`);
   });
 });

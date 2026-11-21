@@ -17,7 +17,7 @@ UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 # Matches the SPA's client-side check in src/lib/utils.ts, so a file the UI
 # accepted never gets a different answer from the server.
-UNSUPPORTED_FORMAT = "Unsupported format — try MP3, WAV, M4A, FLAC, or OGG."
+UNSUPPORTED_FORMAT = "Unsupported format — try MP3, WAV, M4A, FLAC, OGG, MP4, or AAC."
 TOO_LARGE = "File too large — 500MB max."
 
 

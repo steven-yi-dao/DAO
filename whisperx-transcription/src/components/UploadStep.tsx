@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { RefObject } from 'react';
 import type { TranscriptFile } from '../types';
-import { formatBytes } from '../lib/utils';
+import { ACCEPT_ATTRIBUTE, SUPPORTED_FORMATS_TEXT, formatBytes } from '../lib/utils';
 import { StatusBadge } from './StatusBadge';
 import { WaveIcon } from './WaveIcon';
 import { ModalDialog } from './ModalDialog';
@@ -37,6 +37,8 @@ export function UploadStep({
   onBackToTools,
 }: UploadStepProps) {
   const [confirmBack, setConfirmBack] = useState(false);
+  const titleId = useId();
+  const formatsId = useId();
   const readyCount = stagedFiles.filter((f) => f.status === 'selected').length;
   const addDisabled = readyCount === 0;
 
@@ -49,7 +51,10 @@ export function UploadStep({
       <div
         role="button"
         tabIndex={0}
-        aria-label="Upload audio files — drag and drop, or activate to browse"
+        aria-label="Upload audio files"
+        // The aria-label replaces the zone's inner text, so the visible
+        // instructions are wired back in as its description (issue #5).
+        aria-describedby={`${titleId} ${formatsId}`}
         className="upload-dropzone"
         onDragOver={onDragOver}
         onDrop={onDrop}
@@ -61,12 +66,16 @@ export function UploadStep({
           }
         }}
       >
-        <div className="upload-dropzone__title">Drag and drop audio files here</div>
-        <div className="upload-dropzone__hint">or click to browse · MP3, MP4, WAV, M4A, FLAC, OGG</div>
+        <div id={titleId} className="upload-dropzone__title">
+          Drag and drop audio files here<span className="sr-only">.</span>
+        </div>
+        <div className="upload-dropzone__hint">
+          or click to browse · <span id={formatsId}>Supported formats: {SUPPORTED_FORMATS_TEXT}</span>
+        </div>
         <input
           ref={fileInputRef}
           type="file"
-          accept="audio/*"
+          accept={ACCEPT_ATTRIBUTE}
           multiple
           aria-label="Choose audio files"
           hidden
